@@ -1,0 +1,77 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: fleet-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DATABASE_USER:-fleet}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-fleet_secret}
+      POSTGRES_DB: ${DATABASE_NAME:-fleet_db}
+    ports:
+      - "${DATABASE_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init-postgis.sql:/docker-entrypoint-initdb.d/01-postgis.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-fleet} -d ${DATABASE_NAME:-fleet_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: fleet-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fleet-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DATABASE_HOST: postgres
+      REDIS_HOST: redis
+    ports:
+      - "${PORT:-3000}:3000"
+    command: sh -c "node dist/database/run-migrations.js && node dist/main.js"
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fleet-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DATABASE_HOST: postgres
+      REDIS_HOST: redis
+      WORKER_MODE: "true"
+    command: ["node", "dist/worker.js"]
+
+volumes:
+  postgres_data:
+  redis_data:
