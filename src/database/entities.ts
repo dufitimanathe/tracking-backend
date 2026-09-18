@@ -23,6 +23,11 @@ import { Trip } from '../trips/entities/trip.entity';
 import { User } from '../users/entities/user.entity';
 import { AuditLog } from '../audit/entities/audit-log.entity';
 import { WhatsAppMessage } from '../whatsapp/entities/whatsapp-message.entity';
+import { TrackingSession } from '../tracking/entities/tracking-session.entity';
+import { DriverStop } from '../tracking/entities/driver-stop.entity';
+import { Geofence } from '../tracking/entities/geofence.entity';
+import { GeofenceEvent } from '../tracking/entities/geofence-event.entity';
+import { GeocodeCache } from '../tracking/entities/geocode-cache.entity';
 
 export const entities = [
   User,
@@ -38,6 +43,11 @@ export const entities = [
   GpsDevice,
   LocationPing,
   MotorcycleCurrentLocation,
+  TrackingSession,
+  DriverStop,
+  Geofence,
+  GeofenceEvent,
+  GeocodeCache,
   TransportRequest,
   TransportRequestApproval,
   Trip,

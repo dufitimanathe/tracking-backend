@@ -4,6 +4,7 @@ export const QUEUE_GPS_PROCESSING = 'gps-processing';
 export const QUEUE_INCIDENT_DETECTION = 'incident-detection';
 export const QUEUE_INVOICES = 'invoices';
 export const QUEUE_WHATSAPP = 'whatsapp';
+export const QUEUE_TRACKING_PRESENCE = 'tracking-presence';
 
 export const ALL_QUEUES = [
   QUEUE_DISPATCH,
@@ -12,4 +13,5 @@ export const ALL_QUEUES = [
   QUEUE_INCIDENT_DETECTION,
   QUEUE_INVOICES,
   QUEUE_WHATSAPP,
+  QUEUE_TRACKING_PRESENCE,
 ] as const;

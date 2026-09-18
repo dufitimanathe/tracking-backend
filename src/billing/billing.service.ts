@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import Decimal from 'decimal.js';
 import { Repository } from 'typeorm';
+import { getSkipTake } from '../common/dto/pagination.dto';
 import { BillingStatus } from '../common/enums';
 import {
   ConflictDomainException,
@@ -93,11 +94,21 @@ export class BillingService {
     }
   }
 
-  async listForCompany(companyId: string): Promise<BillingRecordResponseDto[]> {
-    const records = await this.billingRecordRepository.find({
+  async listForCompany(
+    companyId: string,
+    page = 1,
+    limit = 20,
+  ): Promise<{ items: BillingRecordResponseDto[]; total: number }> {
+    const { skip, take } = getSkipTake(page, limit);
+    const [records, total] = await this.billingRecordRepository.findAndCount({
       where: { companyId },
       order: { createdAt: 'DESC' },
+      skip,
+      take,
     });
-    return records.map(BillingRecordResponseDto.fromEntity);
+    return {
+      items: records.map(BillingRecordResponseDto.fromEntity),
+      total,
+    };
   }
 }

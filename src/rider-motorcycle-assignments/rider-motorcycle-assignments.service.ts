@@ -50,6 +50,16 @@ export class RiderMotorcycleAssignmentsService {
       qb.andWhere('assignment.active = :active', { active: query.active });
     }
 
+    if (query.riderId) {
+      qb.andWhere('assignment.riderId = :riderId', { riderId: query.riderId });
+    }
+
+    if (query.motorcycleId) {
+      qb.andWhere('assignment.motorcycleId = :motorcycleId', {
+        motorcycleId: query.motorcycleId,
+      });
+    }
+
     const { field, order } = this.parseSort(query.sort);
     qb.orderBy(`assignment.${field}`, order);
 

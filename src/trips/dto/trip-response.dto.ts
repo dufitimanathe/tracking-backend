@@ -16,10 +16,19 @@ export class TripResponseDto {
   employeeId!: string;
 
   @ApiPropertyOptional()
+  employeeName?: string | null;
+
+  @ApiPropertyOptional()
   riderId?: string | null;
 
   @ApiPropertyOptional()
+  riderName?: string | null;
+
+  @ApiPropertyOptional()
   motorcycleId?: string | null;
+
+  @ApiPropertyOptional()
+  motorcyclePlate?: string | null;
 
   @ApiProperty({ enum: TripStatus })
   status!: TripStatus;
@@ -84,14 +93,24 @@ export class TripResponseDto {
   @ApiProperty()
   updatedAt!: Date;
 
-  static fromEntity(entity: Trip): TripResponseDto {
+  static fromEntity(
+    entity: Trip,
+    extras?: {
+      employeeName?: string | null;
+      riderName?: string | null;
+      motorcyclePlate?: string | null;
+    },
+  ): TripResponseDto {
     return {
       id: entity.id,
       companyId: entity.companyId,
       transportRequestId: entity.transportRequestId,
       employeeId: entity.employeeId,
+      employeeName: extras?.employeeName ?? null,
       riderId: entity.riderId,
+      riderName: extras?.riderName ?? null,
       motorcycleId: entity.motorcycleId,
+      motorcyclePlate: extras?.motorcyclePlate ?? null,
       status: entity.status,
       pickupAddress: entity.pickupAddress,
       pickupLatitude: entity.pickupLatitude,

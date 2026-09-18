@@ -75,6 +75,45 @@ export enum LocationSource {
   GPS_DEVICE = 'GPS_DEVICE',
 }
 
+export enum TrackingSessionStatus {
+  ACTIVE = 'ACTIVE',
+  COMPLETED = 'COMPLETED',
+  INTERRUPTED = 'INTERRUPTED',
+}
+
+export enum TrackingMovementState {
+  OFF_DUTY = 'OFF_DUTY',
+  READY = 'READY',
+  TRACKING = 'TRACKING',
+  MOVING = 'MOVING',
+  STOPPED = 'STOPPED',
+  OFFLINE = 'OFFLINE',
+  TRIP_COMPLETED = 'TRIP_COMPLETED',
+}
+
+export enum TrackingPresenceState {
+  LIVE = 'LIVE',
+  DELAYED = 'DELAYED',
+  STALE = 'STALE',
+  OFFLINE = 'OFFLINE',
+}
+
+export enum GeofenceType {
+  HEAD_OFFICE = 'HEAD_OFFICE',
+  WAREHOUSE = 'WAREHOUSE',
+  CUSTOMER = 'CUSTOMER',
+  PARKING = 'PARKING',
+  DEPOT = 'DEPOT',
+  CHECKPOINT = 'CHECKPOINT',
+  DELIVERY_ZONE = 'DELIVERY_ZONE',
+  OTHER = 'OTHER',
+}
+
+export enum GeofenceEventType {
+  ENTER = 'ENTER',
+  EXIT = 'EXIT',
+}
+
 export enum TransportRequestChannel {
   WHATSAPP = 'WHATSAPP',
   WEB = 'WEB',

@@ -16,6 +16,10 @@ import { entities } from '../entities';
 
 loadEnv();
 
+const ADMIN_EMAIL = 'theodufi.rw@gmail.com';
+const ADMIN_PASSWORD = 'Password123!';
+const COMPANY_SLUG = 'virunga-transport-ltd';
+
 const KIGALI_LOCATIONS = {
   kimironko: { lat: -1.9595, lng: 30.1228, label: 'Kimironko Market' },
   kacyiru: { lat: -1.9369, lng: 30.0827, label: 'Kacyiru' },
@@ -23,6 +27,58 @@ const KIGALI_LOCATIONS = {
   nyabugogo: { lat: -1.9392, lng: 30.0444, label: 'Nyabugogo' },
   kigaliHeights: { lat: -1.9506, lng: 30.0912, label: 'Kigali Heights' },
 };
+
+async function ensureAdmin(
+  manager: {
+    query: (sql: string, params?: unknown[]) => Promise<Array<Record<string, unknown>>>;
+  },
+  passwordHash: string,
+  companyId: string,
+): Promise<string> {
+  const existing = await manager.query(`SELECT id FROM users WHERE email = $1 LIMIT 1`, [
+    ADMIN_EMAIL,
+  ]);
+
+  let adminUserId: string;
+  if (existing.length > 0) {
+    adminUserId = existing[0].id as string;
+    await manager.query(
+      `UPDATE users
+       SET "firstName" = $1, "lastName" = $2, phone = $3, "passwordHash" = $4, status = $5, "updatedAt" = now()
+       WHERE id = $6`,
+      ['Theo', 'Dufit', '+250788100001', passwordHash, UserStatus.ACTIVE, adminUserId],
+    );
+  } else {
+    const inserted = await manager.query(
+      `INSERT INTO users ("firstName", "lastName", email, phone, "passwordHash", status)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      ['Theo', 'Dufit', ADMIN_EMAIL, '+250788100001', passwordHash, UserStatus.ACTIVE],
+    );
+    adminUserId = inserted[0].id as string;
+  }
+
+  const membership = await manager.query(
+    `SELECT id FROM company_members WHERE "userId" = $1 AND "companyId" = $2 LIMIT 1`,
+    [adminUserId, companyId],
+  );
+
+  if (membership.length === 0) {
+    await manager.query(
+      `INSERT INTO company_members ("userId", "companyId", role, status, "joinedAt")
+       VALUES ($1, $2, $3, $4, now())`,
+      [adminUserId, companyId, UserRole.COMPANY_ADMIN, MembershipStatus.ACTIVE],
+    );
+  } else {
+    await manager.query(
+      `UPDATE company_members
+       SET role = $1, status = $2, "updatedAt" = now()
+       WHERE id = $3`,
+      [UserRole.COMPANY_ADMIN, MembershipStatus.ACTIVE, membership[0].id],
+    );
+  }
+
+  return adminUserId;
+}
 
 async function runSeed(): Promise<void> {
   const dataSource = new DataSource({
@@ -38,32 +94,40 @@ async function runSeed(): Promise<void> {
   });
 
   await dataSource.initialize();
-  const passwordHash = await argon2.hash('Password123!');
+  const passwordHash = await argon2.hash(ADMIN_PASSWORD);
 
   try {
-    const existing = await dataSource.query(
-      `SELECT id FROM companies WHERE slug = $1 LIMIT 1`,
-      ['virunga-transport-ltd'],
+    const tables = await dataSource.query(
+      `SELECT to_regclass('public.users') AS users, to_regclass('public.companies') AS companies`,
     );
-    if (existing.length > 0) {
-      console.log('Seed already applied (Virunga Transport Ltd exists). Skipping.');
+    if (!tables[0]?.users || !tables[0]?.companies) {
+      throw new Error(
+        'Schema missing (users/companies). Run migrations before seeding.',
+      );
+    }
+
+    const existingCompany = await dataSource.query(
+      `SELECT id FROM companies WHERE slug = $1 LIMIT 1`,
+      [COMPANY_SLUG],
+    );
+
+    if (existingCompany.length > 0) {
+      const companyId = existingCompany[0].id as string;
+      await dataSource.transaction(async (manager) => {
+        await ensureAdmin(manager, passwordHash, companyId);
+      });
+      console.log('Seed refresh: company already exists; admin ensured.');
+      console.log(`Admin login: ${ADMIN_EMAIL} / ${ADMIN_PASSWORD}`);
       return;
     }
 
     await dataSource.transaction(async (manager) => {
-      const adminUser = await manager.query(
-        `INSERT INTO users ("firstName", "lastName", email, phone, "passwordHash", status)
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-        ['Jean Baptiste', 'Mukamana', 'admin@virunga.rw', '+250788100001', passwordHash, UserStatus.ACTIVE],
-      );
-      const adminUserId = adminUser[0].id as string;
-
       const company = await manager.query(
         `INSERT INTO companies (name, slug, email, phone, address, timezone, currency)
          VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
         [
           'Virunga Transport Ltd',
-          'virunga-transport-ltd',
+          COMPANY_SLUG,
           'info@virunga.rw',
           '+250788200000',
           'KG 9 Ave, Kacyiru, Kigali',
@@ -73,16 +137,12 @@ async function runSeed(): Promise<void> {
       );
       const companyId = company[0].id as string;
 
+      await ensureAdmin(manager, passwordHash, companyId);
+
       await manager.query(
         `INSERT INTO company_onboarding ("companyId", "companyProfileCompleted", "operationalSettingsCompleted", "fleetAdded", "teamAdded", "completedAt")
          VALUES ($1, true, true, true, true, now())`,
         [companyId],
-      );
-
-      await manager.query(
-        `INSERT INTO company_members ("userId", "companyId", role, status, "joinedAt")
-         VALUES ($1, $2, $3, $4, now())`,
-        [adminUserId, companyId, UserRole.COMPANY_ADMIN, MembershipStatus.ACTIVE],
       );
 
       await manager.query(
@@ -127,56 +187,57 @@ async function runSeed(): Promise<void> {
           [userId, companyId, UserRole.RIDER, MembershipStatus.ACTIVE],
         );
 
-        const remera = KIGALI_LOCATIONS.remera;
         const riderRow = await manager.query(
-          `INSERT INTO riders ("companyId", "userId", phone, status, "availabilityStatus", "currentLatitude", "currentLongitude", position, "locationUpdatedAt")
-           VALUES ($1, $2, $3, $4, $5, $6, $7, ST_GeogFromText($8), now()) RETURNING id`,
+          `INSERT INTO riders ("companyId", "userId", phone, status, "availabilityStatus")
+           VALUES ($1, $2, $3, $4, $5) RETURNING id`,
           [
             companyId,
             userId,
             rider.phone,
             RiderStatus.ACTIVE,
-            RiderAvailabilityStatus.AVAILABLE,
-            String(remera.lat),
-            String(remera.lng),
-            toPointWkt(remera),
+            RiderAvailabilityStatus.OFFLINE,
           ],
         );
         riderIds.push(riderRow[0].id as string);
       }
 
-      const motorcycles = [
-        { plate: 'RAD 101 A', brand: 'TVS', model: 'HLX 125', code: 'VT-M01' },
-        { plate: 'RAD 102 B', brand: 'Bajaj', model: 'Boxer 150', code: 'VT-M02' },
-        { plate: 'RAD 103 C', brand: 'Honda', model: 'Ace CB125', code: 'VT-M03' },
-      ];
-
+      const plates = ['RAE 428C', 'RAD 103B', 'RAG 551D'];
       const motorcycleIds: string[] = [];
-      for (const moto of motorcycles) {
-        const row = await manager.query(
-          `INSERT INTO motorcycles ("companyId", "plateNumber", "internalCode", brand, model, status, "trackingStatus")
-           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+      for (let i = 0; i < plates.length; i += 1) {
+        const moto = await manager.query(
+          `INSERT INTO motorcycles ("companyId", "plateNumber", "internalCode", brand, model, year, color, status, "trackingStatus")
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
           [
             companyId,
-            moto.plate,
-            moto.code,
-            moto.brand,
-            moto.model,
+            plates[i],
+            `VT-0${i + 1}`,
+            'TVS',
+            'Apache 160',
+            2023,
+            'Black',
             MotorcycleStatus.ACTIVE,
-            MotorcycleTrackingStatus.PARKED,
+            MotorcycleTrackingStatus.OFFLINE,
           ],
         );
-        motorcycleIds.push(row[0].id as string);
+        motorcycleIds.push(moto[0].id as string);
       }
 
       for (let i = 0; i < riderIds.length; i += 1) {
         await manager.query(
           `INSERT INTO rider_motorcycle_assignments ("companyId", "riderId", "motorcycleId", "assignedById", "assignedAt", active)
-           VALUES ($1, $2, $3, $4, now(), true)`,
-          [companyId, riderIds[i], motorcycleIds[i], adminUserId],
+           VALUES ($1, $2, $3, (SELECT id FROM users WHERE email = $4 LIMIT 1), now(), true)`,
+          [companyId, riderIds[i], motorcycleIds[i], ADMIN_EMAIL],
         );
+      }
 
-        const loc = [KIGALI_LOCATIONS.kimironko, KIGALI_LOCATIONS.kacyiru, KIGALI_LOCATIONS.nyabugogo][i];
+      const locs = [
+        KIGALI_LOCATIONS.kimironko,
+        KIGALI_LOCATIONS.kacyiru,
+        KIGALI_LOCATIONS.remera,
+      ];
+
+      for (let i = 0; i < motorcycleIds.length; i += 1) {
+        const loc = locs[i];
         await manager.query(
           `INSERT INTO motorcycle_current_locations ("motorcycleId", "companyId", position, latitude, longitude, source, "recordedAt")
            VALUES ($1, $2, ST_GeogFromText($3), $4, $5, 'RIDER_APP', now())`,
@@ -191,7 +252,7 @@ async function runSeed(): Promise<void> {
       }
 
       console.log('Seed completed: Virunga Transport Ltd with Rwandan staff and Kigali fleet.');
-      console.log('Admin login: admin@virunga.rw / Password123!');
+      console.log(`Admin login: ${ADMIN_EMAIL} / ${ADMIN_PASSWORD}`);
     });
   } finally {
     await dataSource.destroy();

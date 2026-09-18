@@ -6,40 +6,48 @@ Use this checklist when you are ready to enable each integration.
 
 ---
 
-## 1. Google Maps Platform (Routes / Geocoding)
+## 1. Google Maps Platform (Maps JS / Routes / Geocoding)
 
-**Why:** road distance, ETA, route matrix for ranking nearest riders (after PostGIS shortlist). GPS points themselves never call Google.
+**Why:** road distance, ETA, polylines, admin live map tiles, and (later) mobile off-route checks. GPS pings themselves never call Google.
+
+**Full checklist:** [`GOOGLE_MAPS_SETUP.md`](./GOOGLE_MAPS_SETUP.md)
 
 ### What to create
 
-1. Google Cloud project
+1. Google Cloud project (billing / free trial enabled)
 2. Enable APIs:
+   - **Maps JavaScript API** (web map UI)
    - **Geocoding API**
-   - **Routes API** (preferred) and/or **Distance Matrix API**
-   - Optionally **Places API** later
-3. Create an **API key** (restrict by IP for server backends)
-4. Enable billing on the GCP project (Maps requires a billing account even within free credit)
+   - **Routes API** (preferred for distance/ETA/polyline)
+   - **Distance Matrix API** (optional matrix ranking)
+   - Optionally **Directions API** (backend fallback) and **Places API** later
+3. Create **two** API keys:
+   - Server key → IP-restricted → `GOOGLE_MAPS_API_KEY` (backend)
+   - Browser key → HTTP-referrer-restricted → `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` (frontend)
+4. Leave keys empty in env until you paste them — the app runs with Haversine + CSS map fallback
 
 ### Env vars
 
 ```env
-GOOGLE_MAPS_API_KEY=your_server_key
+# backend/.env
+GOOGLE_MAPS_API_KEY=
+TRACKING_MODE=phone_primary
+
+# frontend/.env.local
+NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=
+NEXT_PUBLIC_API_URL=http://localhost:3000/api/v1
+NEXT_PUBLIC_WS_URL=http://localhost:3000/realtime
 ```
 
 ### Behavior when missing
 
-`MapsModule` falls back to **Haversine** distance/duration estimates. Dispatch still works via PostGIS proximity.
+`MapsModule` falls back to **Haversine**. Frontend map falls back to CSS placeholder. Dispatch still works via PostGIS proximity.
 
 ### Cost control (already designed)
 
 - Do **not** call Google on every GPS ping
-- Call only for: new request estimate, top-N rider ranking, occasional ETA refresh
-- Cache route results where practical
-
-### Docs
-
-- https://developers.google.com/maps/documentation/routes
-- https://developers.google.com/maps/documentation/geocoding
+- Call only for: new request estimate, top-N rider ranking, occasional ETA refresh, map tiles
+- Cache route/geocode results where practical
 
 ---
 
@@ -147,6 +155,8 @@ If confidence &lt; threshold or required fields missing, backend asks the employ
 
 ## 4. Optional GPS hardware providers
 
+**Default is phone-first** (`TRACKING_MODE=phone_primary`). Hardware GPS is optional and expensive — skip it unless you need ignition/tamper signals.
+
 Architecture uses `GpsProvider.normalizeLocation()` +  
 `POST /api/v1/integrations/gps/:provider/webhook`.
 
@@ -157,17 +167,19 @@ For a vendor (Teltonika, Queclink, etc.):
 3. Map payload → `NormalizedGpsPayload`
 4. Set vendor-specific secret in env (extend `env.validation.ts` as needed)
 
-Rider React Native GPS works today without hardware.
+Rider mobile app GPS (`POST /locations/rider`) is the primary path. Mobile app implementation comes after web + API are stable.
 
 ---
 
 ## 5. Suggested enablement order
 
-1. Core REST + PostGIS + rider GPS (done without external APIs)
-2. Google Maps key (better ETAs / fares)
-3. WhatsApp Cloud API (employee channel)
-4. OpenAI or Gemini (natural language → structured request)
-5. Hardware GPS adapters
+1. Core REST + PostGIS + phone GPS ingest (done)
+2. Paste Google Maps keys (Maps JS + Routes + Geocoding) — see `GOOGLE_MAPS_SETUP.md`
+3. Wire admin/supervisor live map (frontend) — done with mock fallback
+4. Rider mobile app (tracking, assignment, ETA / off-route notifications)
+5. WhatsApp Cloud API (employee channel)
+6. OpenAI or Gemini (natural language → structured request)
+7. Hardware GPS adapters only if needed
 
 ---
 
@@ -175,7 +187,9 @@ Rider React Native GPS works today without hardware.
 
 | Integration | Required secrets / IDs |
 |-------------|------------------------|
-| Google Maps | `GOOGLE_MAPS_API_KEY` |
+| Google Maps (server) | `GOOGLE_MAPS_API_KEY` |
+| Google Maps (browser) | `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` (frontend) |
+| Tracking | `TRACKING_MODE=phone_primary`, optional deviation/ETA grace |
 | WhatsApp | `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET` |
 | OpenAI | `OPENAI_API_KEY`, `AI_PROVIDER=openai` |
 | Gemini | `GEMINI_API_KEY`, `AI_PROVIDER=gemini` |

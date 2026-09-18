@@ -26,6 +26,7 @@ export class LocationsController {
 
   @Post('locations/rider')
   @ApiSuccessResponse(Object)
+  /** Primary tracking path when TRACKING_MODE=phone_primary (rider mobile app). */
   async ingestRiderLocation(
     @CurrentUser() user: AuthUser,
     @Body() dto: IngestRiderLocationDto,

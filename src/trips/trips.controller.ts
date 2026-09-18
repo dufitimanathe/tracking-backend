@@ -40,8 +40,15 @@ export class TripsController {
   async list(
     @Param('companyId', ParseUUIDPipe) companyId: string,
     @Query() query: TripQueryDto,
+    @CurrentUser() user: AuthUser,
+    @CurrentCompany() company: CompanyContext,
   ) {
-    const { items, total } = await this.tripsService.findAll(companyId, query);
+    const scopedQuery = { ...query };
+    if (company.role === UserRole.RIDER) {
+      const rider = await this.tripsService.resolveRiderId(companyId, user.id);
+      scopedQuery.riderId = rider;
+    }
+    const { items, total } = await this.tripsService.findAll(companyId, scopedQuery);
     return paginatedResponse(items, query.page, query.limit, total);
   }
 

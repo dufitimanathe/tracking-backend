@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpStatus,
   Param,
@@ -28,6 +29,7 @@ import { CreateRiderDto } from './dto/create-rider.dto';
 import { RiderQueryDto } from './dto/rider-query.dto';
 import {
   CreateRiderResultDto,
+  RiderMeResponseDto,
   RiderResponseDto,
 } from './dto/rider-response.dto';
 import { UpdateRiderAvailabilityDto } from './dto/update-rider-availability.dto';
@@ -50,6 +52,17 @@ export class RidersController {
   ) {
     const { items, total } = await this.ridersService.findAll(companyId, query);
     return paginatedResponse(items, query.page, query.limit, total);
+  }
+
+  @Get('me')
+  @Roles(UserRole.RIDER)
+  @ApiSuccessResponse(RiderMeResponseDto)
+  async me(
+    @Param('companyId', ParseUUIDPipe) companyId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    const rider = await this.ridersService.findMe(companyId, user.id);
+    return successResponse(rider);
   }
 
   @Get(':riderId')
@@ -88,13 +101,46 @@ export class RidersController {
   @Patch(':riderId')
   @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR)
   @ApiSuccessResponse(RiderResponseDto)
-  async updateStatus(
+  async update(
     @Param('companyId', ParseUUIDPipe) companyId: string,
     @Param('riderId', ParseUUIDPipe) riderId: string,
     @Body() dto: UpdateRiderDto,
   ) {
     const rider = await this.ridersService.updateStatus(companyId, riderId, dto);
     return successResponse(rider);
+  }
+
+  @Post(':riderId/deactivate')
+  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR)
+  @ApiSuccessResponse(RiderResponseDto)
+  async deactivate(
+    @Param('companyId', ParseUUIDPipe) companyId: string,
+    @Param('riderId', ParseUUIDPipe) riderId: string,
+  ) {
+    const rider = await this.ridersService.deactivate(companyId, riderId);
+    return successResponse(rider);
+  }
+
+  @Post(':riderId/unavailable')
+  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR)
+  @ApiSuccessResponse(RiderResponseDto)
+  async markUnavailable(
+    @Param('companyId', ParseUUIDPipe) companyId: string,
+    @Param('riderId', ParseUUIDPipe) riderId: string,
+  ) {
+    const rider = await this.ridersService.markUnavailable(companyId, riderId);
+    return successResponse(rider);
+  }
+
+  @Delete(':riderId')
+  @Roles(UserRole.COMPANY_ADMIN)
+  @ApiSuccessResponse(Object)
+  async remove(
+    @Param('companyId', ParseUUIDPipe) companyId: string,
+    @Param('riderId', ParseUUIDPipe) riderId: string,
+  ) {
+    const result = await this.ridersService.remove(companyId, riderId);
+    return successResponse(result);
   }
 
   @Post(':riderId/availability')

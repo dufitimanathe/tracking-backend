@@ -7,6 +7,8 @@ import { LocationSource } from '../../common/enums';
 @Index('idx_location_pings_motorcycle_id', ['motorcycleId'])
 @Index('idx_location_pings_recorded_at', ['recordedAt'])
 @Index('idx_location_pings_company_recorded', ['companyId', 'recordedAt'])
+@Index('idx_location_pings_session_recorded', ['trackingSessionId', 'recordedAt'])
+@Index('idx_location_pings_rider_recorded', ['riderId', 'recordedAt'])
 export class LocationPing extends TenantEntity {
   @Column({ type: 'uuid' })
   motorcycleId!: string;
@@ -16,6 +18,12 @@ export class LocationPing extends TenantEntity {
 
   @Column({ type: 'uuid', nullable: true })
   tripId?: string | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  trackingSessionId?: string | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  clientLocationId?: string | null;
 
   @Column({
     type: 'geography',
@@ -38,6 +46,9 @@ export class LocationPing extends TenantEntity {
 
   @Column({ type: 'double precision', nullable: true })
   accuracy?: number | null;
+
+  @Column({ type: 'double precision', nullable: true })
+  altitude?: number | null;
 
   @Column({ type: 'boolean', nullable: true })
   ignition?: boolean | null;

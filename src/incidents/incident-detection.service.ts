@@ -146,10 +146,22 @@ export class IncidentDetectionService {
     const ops = this.configService.get('app.ops', { infer: true })!;
     const threshold = new Date(Date.now() - ops.gpsOfflineThresholdSeconds * 1000);
 
-    const staleDevices = await this.gpsDeviceRepository
-      .createQueryBuilder('d')
-      .where('d.lastSeenAt IS NULL OR d.lastSeenAt < :threshold', { threshold })
-      .getMany();
+    let staleDevices: GpsDevice[];
+    try {
+      staleDevices = await this.gpsDeviceRepository
+        .createQueryBuilder('d')
+        .where('d.lastSeenAt IS NULL OR d.lastSeenAt < :threshold', { threshold })
+        .getMany();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (message.includes('gps_devices') || message.includes('does not exist')) {
+        this.logger.warn(
+          'Skipping GPS offline check — gps_devices table missing (run migrations).',
+        );
+        return 0;
+      }
+      throw err;
+    }
 
     let created = 0;
     for (const device of staleDevices) {

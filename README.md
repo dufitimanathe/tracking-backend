@@ -44,7 +44,7 @@ npm run seed
 ```
 
 Seed company: **Virunga Transport Ltd**  
-Admin: `admin@virunga.rw` / `Password123!`
+Admin: `theodufi.rw@gmail.com` / `Password123!`
 
 ### 5. Run API (+ optional worker)
 
@@ -62,6 +62,15 @@ npm run start:worker
 ```bash
 docker compose up --build
 ```
+
+If the database was started before migrations worked (empty schema / missing `users`), reset the volume once:
+
+```bash
+docker compose down -v
+docker compose up --build
+```
+
+API startup runs migrations + seed automatically.
 
 ## MVP workflow (REST, no WhatsApp/AI required)
 

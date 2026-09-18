@@ -20,11 +20,13 @@ import {
 } from '../common/enums';
 import { BillingService } from '../billing/billing.service';
 import { DispatchService } from '../dispatch/dispatch.service';
+import { Employee } from '../employees/entities/employee.entity';
 import { Motorcycle } from '../motorcycles/entities/motorcycle.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { Rider } from '../riders/entities/rider.entity';
 import { TransportRequest } from '../transport-requests/entities/transport-request.entity';
 import { TripEventsService } from '../trip-events/trip-events.service';
+import { User } from '../users/entities/user.entity';
 import { AssignTripDto } from './dto/assign-trip.dto';
 import { CancelTripDto } from './dto/cancel-trip.dto';
 import { TripQueryDto } from './dto/trip-query.dto';
@@ -53,6 +55,10 @@ export class TripsService {
     private readonly motorcycleRepository: Repository<Motorcycle>,
     @InjectRepository(TransportRequest)
     private readonly transportRequestRepository: Repository<TransportRequest>,
+    @InjectRepository(Employee)
+    private readonly employeeRepository: Repository<Employee>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
     private readonly dataSource: DataSource,
     private readonly tripEventsService: TripEventsService,
     private readonly dispatchService: DispatchService,
@@ -73,20 +79,31 @@ export class TripsService {
       qb.andWhere('trip.status = :status', { status: query.status });
     }
 
+    if (query.riderId) {
+      qb.andWhere('trip.riderId = :riderId', { riderId: query.riderId });
+    }
+
+    if (query.motorcycleId) {
+      qb.andWhere('trip.motorcycleId = :motorcycleId', {
+        motorcycleId: query.motorcycleId,
+      });
+    }
+
     const { field, order } = this.parseSort(query.sort);
     qb.orderBy(`trip.${field}`, order);
 
     const [items, total] = await qb.skip(skip).take(take).getManyAndCount();
 
     return {
-      items: items.map(TripResponseDto.fromEntity),
+      items: await this.toResponseDtos(items),
       total,
     };
   }
 
   async findOne(companyId: string, tripId: string): Promise<TripResponseDto> {
     const trip = await this.findByIdOrFail(companyId, tripId);
-    return TripResponseDto.fromEntity(trip);
+    const [dto] = await this.toResponseDtos([trip]);
+    return dto;
   }
 
   async findByIdOrFail(companyId: string, tripId: string): Promise<Trip> {
@@ -499,6 +516,11 @@ export class TripsService {
     return TripResponseDto.fromEntity(trip);
   }
 
+  async resolveRiderId(companyId: string, userId: string): Promise<string> {
+    const rider = await this.getRiderForActor(companyId, userId);
+    return rider.id;
+  }
+
   private async getRiderForActor(companyId: string, userId: string): Promise<Rider> {
     const rider = await this.riderRepository.findOne({
       where: { companyId, userId },
@@ -539,6 +561,50 @@ export class TripsService {
     }
 
     return lockedTrip;
+  }
+
+  private async toResponseDtos(trips: Trip[]): Promise<TripResponseDto[]> {
+    if (trips.length === 0) {
+      return [];
+    }
+
+    const employeeIds = [...new Set(trips.map((t) => t.employeeId))];
+    const riderIds = [...new Set(trips.map((t) => t.riderId).filter(Boolean))] as string[];
+    const motorcycleIds = [
+      ...new Set(trips.map((t) => t.motorcycleId).filter(Boolean)),
+    ] as string[];
+
+    const [employees, riders, motorcycles] = await Promise.all([
+      this.employeeRepository.find({ where: { id: In(employeeIds) } }),
+      riderIds.length
+        ? this.riderRepository.find({ where: { id: In(riderIds) } })
+        : Promise.resolve([] as Rider[]),
+      motorcycleIds.length
+        ? this.motorcycleRepository.find({ where: { id: In(motorcycleIds) } })
+        : Promise.resolve([] as Motorcycle[]),
+    ]);
+
+    const userIds = riders.map((r) => r.userId);
+    const users = userIds.length
+      ? await this.userRepository.find({ where: { id: In(userIds) } })
+      : [];
+
+    const employeeMap = new Map(employees.map((e) => [e.id, e.fullName]));
+    const userMap = new Map(users.map((u) => [u.id, `${u.firstName} ${u.lastName}`]));
+    const riderMap = new Map(
+      riders.map((r) => [r.id, userMap.get(r.userId) ?? null]),
+    );
+    const plateMap = new Map(motorcycles.map((m) => [m.id, m.plateNumber]));
+
+    return trips.map((trip) =>
+      TripResponseDto.fromEntity(trip, {
+        employeeName: employeeMap.get(trip.employeeId) ?? null,
+        riderName: trip.riderId ? (riderMap.get(trip.riderId) ?? null) : null,
+        motorcyclePlate: trip.motorcycleId
+          ? (plateMap.get(trip.motorcycleId) ?? null)
+          : null,
+      }),
+    );
   }
 
   private parseSort(sort?: string): { field: string; order: 'ASC' | 'DESC' } {

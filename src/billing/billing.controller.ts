@@ -1,10 +1,11 @@
-import { Controller, Get, Param, ParseUUIDPipe, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, ParseUUIDPipe, Query, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { CompanyAccessGuard } from '../auth/guards/company-access.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { ApiSuccessResponse } from '../common/decorators/api-success.decorator';
 import { CompanyScoped, Roles } from '../common/decorators/roles.decorator';
-import { successResponse } from '../common/dto/api-response.dto';
+import { paginatedResponse } from '../common/dto/api-response.dto';
+import { PaginationQueryDto } from '../common/dto/pagination.dto';
 import { UserRole } from '../common/enums';
 import { BillingRecordResponseDto } from './dto/billing-record-response.dto';
 import { BillingService } from './billing.service';
@@ -19,8 +20,15 @@ export class BillingController {
   @Get()
   @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR)
   @ApiSuccessResponse(BillingRecordResponseDto, true)
-  async list(@Param('companyId', ParseUUIDPipe) companyId: string) {
-    const records = await this.billingService.listForCompany(companyId);
-    return successResponse(records);
+  async list(
+    @Param('companyId', ParseUUIDPipe) companyId: string,
+    @Query() query: PaginationQueryDto,
+  ) {
+    const { items, total } = await this.billingService.listForCompany(
+      companyId,
+      query.page,
+      query.limit,
+    );
+    return paginatedResponse(items, query.page, query.limit, total);
   }
 }

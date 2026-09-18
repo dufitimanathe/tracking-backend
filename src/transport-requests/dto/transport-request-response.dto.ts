@@ -12,6 +12,15 @@ export class TransportRequestResponseDto {
   @ApiProperty()
   employeeId!: string;
 
+  @ApiPropertyOptional()
+  employeeName?: string | null;
+
+  @ApiPropertyOptional()
+  employeePhone?: string | null;
+
+  @ApiPropertyOptional()
+  department?: string | null;
+
   @ApiProperty()
   pickupAddress!: string;
 
@@ -54,11 +63,21 @@ export class TransportRequestResponseDto {
   @ApiPropertyOptional()
   notes?: string | null;
 
-  static fromEntity(entity: TransportRequest): TransportRequestResponseDto {
+  static fromEntity(
+    entity: TransportRequest,
+    extras?: {
+      employeeName?: string | null;
+      employeePhone?: string | null;
+      department?: string | null;
+    },
+  ): TransportRequestResponseDto {
     return {
       id: entity.id,
       companyId: entity.companyId,
       employeeId: entity.employeeId,
+      employeeName: extras?.employeeName ?? null,
+      employeePhone: extras?.employeePhone ?? null,
+      department: extras?.department ?? null,
       pickupAddress: entity.pickupAddress,
       pickupLatitude: entity.pickupLatitude,
       pickupLongitude: entity.pickupLongitude,

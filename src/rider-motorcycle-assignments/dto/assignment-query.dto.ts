@@ -1,6 +1,6 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsOptional } from 'class-validator';
+import { IsBoolean, IsOptional, IsUUID } from 'class-validator';
 import { PaginationQueryDto } from '../../common/dto/pagination.dto';
 
 export class AssignmentQueryDto extends PaginationQueryDto {
@@ -15,4 +15,14 @@ export class AssignmentQueryDto extends PaginationQueryDto {
   })
   @IsBoolean()
   active?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  riderId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsUUID()
+  motorcycleId?: string;
 }

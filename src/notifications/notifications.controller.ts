@@ -12,15 +12,23 @@ import { CompanyAccessGuard } from '../auth/guards/company-access.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { ApiSuccessResponse } from '../common/decorators/api-success.decorator';
 import { AuthUser, CurrentUser } from '../common/decorators/current-user.decorator';
-import { CompanyScoped } from '../common/decorators/roles.decorator';
+import { CompanyScoped, Roles } from '../common/decorators/roles.decorator';
 import { PaginationQueryDto } from '../common/dto/pagination.dto';
 import { paginatedResponse, successResponse } from '../common/dto/api-response.dto';
+import { UserRole } from '../common/enums';
 import { NotificationResponseDto } from './dto/notification-response.dto';
 import { NotificationsService } from './notifications.service';
 
 @ApiTags('notifications')
 @CompanyScoped()
 @UseGuards(CompanyAccessGuard, RolesGuard)
+@Roles(
+  UserRole.COMPANY_ADMIN,
+  UserRole.SUPERVISOR,
+  UserRole.RIDER,
+  UserRole.EMPLOYEE,
+  UserRole.PLATFORM_ADMIN,
+)
 @Controller('companies/:companyId/notifications')
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}

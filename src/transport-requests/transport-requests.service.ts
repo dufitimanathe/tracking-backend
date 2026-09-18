@@ -230,14 +230,15 @@ export class TransportRequestsService {
     const [items, total] = await qb.skip(skip).take(take).getManyAndCount();
 
     return {
-      items: items.map(TransportRequestResponseDto.fromEntity),
+      items: await this.toResponseDtos(items),
       total,
     };
   }
 
   async findOne(companyId: string, requestId: string): Promise<TransportRequestResponseDto> {
     const request = await this.findByIdOrFail(companyId, requestId);
-    return TransportRequestResponseDto.fromEntity(request);
+    const [dto] = await this.toResponseDtos([request]);
+    return dto;
   }
 
   async cancel(
@@ -322,6 +323,29 @@ export class TransportRequestsService {
     }
 
     return employee.id;
+  }
+
+  private async toResponseDtos(
+    requests: TransportRequest[],
+  ): Promise<TransportRequestResponseDto[]> {
+    if (requests.length === 0) {
+      return [];
+    }
+
+    const employeeIds = [...new Set(requests.map((r) => r.employeeId))];
+    const employees = await this.employeeRepository.find({
+      where: { id: In(employeeIds) },
+    });
+    const employeeMap = new Map(employees.map((e) => [e.id, e]));
+
+    return requests.map((request) => {
+      const employee = employeeMap.get(request.employeeId);
+      return TransportRequestResponseDto.fromEntity(request, {
+        employeeName: employee?.fullName ?? null,
+        employeePhone: employee?.phone ?? null,
+        department: employee?.department ?? null,
+      });
+    });
   }
 
   private parseSort(sort?: string): { field: string; order: 'ASC' | 'DESC' } {

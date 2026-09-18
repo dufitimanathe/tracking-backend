@@ -15,6 +15,12 @@ export class RiderResponseDto {
   @ApiProperty()
   userId!: string;
 
+  @ApiPropertyOptional()
+  firstName?: string | null;
+
+  @ApiPropertyOptional()
+  lastName?: string | null;
+
   @ApiProperty()
   phone!: string;
 
@@ -42,11 +48,16 @@ export class RiderResponseDto {
   @ApiProperty()
   updatedAt!: Date;
 
-  static fromEntity(entity: Rider): RiderResponseDto {
+  static fromEntity(
+    entity: Rider,
+    extras?: { firstName?: string | null; lastName?: string | null },
+  ): RiderResponseDto {
     return {
       id: entity.id,
       companyId: entity.companyId,
       userId: entity.userId,
+      firstName: extras?.firstName ?? null,
+      lastName: extras?.lastName ?? null,
       phone: entity.phone,
       licenseNumber: entity.licenseNumber ?? null,
       status: entity.status,
@@ -65,4 +76,41 @@ export class CreateRiderResultDto extends RiderResponseDto {
     description: 'Temporary password when a new user account was created.',
   })
   temporaryPassword?: string;
+}
+
+export class RiderMotorcycleSummaryDto {
+  @ApiProperty()
+  id!: string;
+
+  @ApiProperty()
+  plateNumber!: string;
+
+  @ApiPropertyOptional()
+  internalCode?: string | null;
+
+  @ApiPropertyOptional()
+  brand?: string | null;
+
+  @ApiPropertyOptional()
+  model?: string | null;
+
+  @ApiPropertyOptional()
+  year?: number | null;
+
+  @ApiPropertyOptional()
+  color?: string | null;
+
+  @ApiProperty()
+  status!: string;
+
+  @ApiProperty()
+  trackingStatus!: string;
+}
+
+export class RiderMeResponseDto extends RiderResponseDto {
+  @ApiPropertyOptional({ type: RiderMotorcycleSummaryDto })
+  motorcycle?: RiderMotorcycleSummaryDto | null;
+
+  @ApiPropertyOptional()
+  assignmentId?: string | null;
 }

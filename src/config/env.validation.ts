@@ -23,7 +23,30 @@ export const envValidationSchema = Joi.object({
 
   CORS_ORIGINS: Joi.string().default('http://localhost:3001'),
 
+  /** Paste from Google Cloud Console — server key (IP restricted). Empty = Haversine fallback. */
   GOOGLE_MAPS_API_KEY: Joi.string().allow('').optional(),
+  TRACKING_MODE: Joi.string()
+    .valid('phone_primary', 'hardware_primary', 'hybrid')
+    .default('phone_primary'),
+  TRACKING_ROUTE_DEVIATION_METERS: Joi.number().default(120),
+  TRACKING_ETA_GRACE_SECONDS: Joi.number().default(180),
+  LOCATION_ACCURACY_THRESHOLD_M: Joi.number().default(80),
+  MOVING_SPEED_THRESHOLD_MPS: Joi.number().default(1.5),
+  STOPPED_SPEED_THRESHOLD_MPS: Joi.number().default(0.6),
+  MIN_DISTANCE_INTERVAL_M: Joi.number().default(12),
+  MAX_TELEPORT_SPEED_MPS: Joi.number().default(55),
+  STOP_RADIUS_M: Joi.number().default(40),
+  STOP_MIN_DURATION_SEC: Joi.number().default(180),
+  MOVING_CONFIRM_SEC: Joi.number().default(8),
+  STOPPED_CONFIRM_SEC: Joi.number().default(45),
+  PRESENCE_LIVE_SEC: Joi.number().default(30),
+  PRESENCE_DELAYED_SEC: Joi.number().default(90),
+  PRESENCE_STALE_SEC: Joi.number().default(300),
+  PRESENCE_OFFLINE_SEC: Joi.number().default(300),
+  LOCATION_UPLOAD_BATCH_SIZE: Joi.number().default(50),
+  REDIS_TRACKING_TTL_SEC: Joi.number().default(600),
+  TRACKING_ROADS_SNAP_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
+  TRACKING_HISTORY_RETENTION_DAYS: Joi.number().default(365),
   WHATSAPP_ACCESS_TOKEN: Joi.string().allow('').optional(),
   WHATSAPP_VERIFY_TOKEN: Joi.string().allow('').optional(),
   WHATSAPP_PHONE_NUMBER_ID: Joi.string().allow('').optional(),
