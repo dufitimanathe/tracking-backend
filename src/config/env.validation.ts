@@ -56,8 +56,9 @@ export const envValidationSchema = Joi.object({
   OPENAI_API_KEY: Joi.string().allow('').optional(),
   OPENAI_TRANSPORT_MODEL: Joi.string().default('gpt-4o'),
   GEMINI_API_KEY: Joi.string().allow('').optional(),
-  AI_PROVIDER: Joi.string().valid('openai', 'gemini', 'mock').default('mock'),
+  AI_PROVIDER: Joi.string().valid('openai', 'gemini').default('openai'),
   AI_CONFIDENCE_THRESHOLD: Joi.number().min(0).max(1).default(0.75),
+  WHATSAPP_PICKUP_CHANGE_MINUTES_BEFORE: Joi.number().min(0).default(30),
 
   DISPATCH_OFFER_TIMEOUT_SECONDS: Joi.number().default(45),
   GPS_OFFLINE_THRESHOLD_SECONDS: Joi.number().default(120),

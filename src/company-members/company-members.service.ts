@@ -83,7 +83,7 @@ export class CompanyMembersService {
       userId: user.id,
       companyId,
       role: dto.role,
-      status: dto.status ?? MembershipStatus.INVITED,
+      status: dto.status ?? MembershipStatus.ACTIVE,
       joinedAt: new Date(),
     });
     const savedMembership = await this.companyMemberRepository.save(membership);

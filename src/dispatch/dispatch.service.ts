@@ -4,7 +4,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
 import Redis from 'ioredis';
-import { DataSource, Repository } from 'typeorm';
+import { DataSource, In, Repository } from 'typeorm';
 import {
   ConflictDomainException,
   NotFoundDomainException,
@@ -17,12 +17,14 @@ import {
   TripEventType,
   TripStatus,
 } from '../common/enums';
+import { Motorcycle } from '../motorcycles/entities/motorcycle.entity';
 import { Rider } from '../riders/entities/rider.entity';
 import { TransportRequest } from '../transport-requests/entities/transport-request.entity';
 import { TripEventsService } from '../trip-events/trip-events.service';
 import { Trip } from '../trips/entities/trip.entity';
 import { assertTransition } from '../trips/trip-state-machine';
 import { REDIS_CLIENT } from '../common/redis/redis.constants';
+import { User } from '../users/entities/user.entity';
 import {
   DISPATCH_QUEUE,
   DISPATCH_TIMEOUT_JOB,
@@ -31,6 +33,32 @@ import {
 import { AssignmentAttempt } from './entities/assignment-attempt.entity';
 import { RiderMatchCandidate, RiderMatchingService } from './rider-matching.service';
 import { WhatsAppStatusNotifierService } from '../whatsapp/whatsapp-status-notifier.service';
+
+export interface AssignmentCandidateDto {
+  rank: number;
+  riderId: string;
+  motorcycleId: string;
+  riderName: string;
+  riderPhone: string;
+  plateNumber: string;
+  distanceMeters: number;
+  durationSeconds?: number;
+  etaMinutes?: number;
+  latitude?: number;
+  longitude?: number;
+  locationAgeSeconds?: number;
+  recommended: boolean;
+}
+
+export interface AssignmentRecommendationsDto {
+  tripId: string;
+  method: AssignmentMethod;
+  pickupAddress: string;
+  pickupLatitude: number;
+  pickupLongitude: number;
+  recommendedRiderId?: string;
+  candidates: AssignmentCandidateDto[];
+}
 
 @Injectable()
 export class DispatchService {
@@ -45,6 +73,10 @@ export class DispatchService {
     private readonly transportRequestRepository: Repository<TransportRequest>,
     @InjectRepository(AssignmentAttempt)
     private readonly assignmentAttemptRepository: Repository<AssignmentAttempt>,
+    @InjectRepository(Motorcycle)
+    private readonly motorcycleRepository: Repository<Motorcycle>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
     private readonly riderMatchingService: RiderMatchingService,
     private readonly tripEventsService: TripEventsService,
     private readonly dataSource: DataSource,
@@ -55,6 +87,93 @@ export class DispatchService {
     private readonly redis: Redis,
     private readonly whatsappStatusNotifier: WhatsAppStatusNotifierService,
   ) {}
+
+  /**
+   * Rank nearest AVAILABLE riders for admin assignment UI.
+   * Uses PostGIS shortlist + Google Distance Matrix when configured.
+   */
+  async getAssignmentRecommendations(
+    companyId: string,
+    tripId: string,
+  ): Promise<AssignmentRecommendationsDto> {
+    const trip = await this.tripRepository.findOne({ where: { id: tripId, companyId } });
+    if (!trip) {
+      throw new NotFoundDomainException('Trip not found.');
+    }
+
+    const radiusMeters = this.configService.get<number>('app.ops.riderSearchRadiusMeters', {
+      infer: true,
+    })!;
+    const adminMaxAge = this.configService.get<number>(
+      'app.ops.adminRiderLocationMaxAgeSeconds',
+      { infer: true },
+    )!;
+
+    const ranked = await this.riderMatchingService.findAndRankCandidates(
+      companyId,
+      trip.pickupLatitude,
+      trip.pickupLongitude,
+      radiusMeters,
+      undefined,
+      { maxAgeSeconds: adminMaxAge },
+    );
+
+    const riderIds = ranked.candidates.map((c) => c.riderId);
+    const motorcycleIds = ranked.candidates.map((c) => c.motorcycleId);
+
+    const [riders, motorcycles] = await Promise.all([
+      riderIds.length
+        ? this.riderRepository.find({ where: { id: In(riderIds), companyId } })
+        : Promise.resolve([] as Rider[]),
+      motorcycleIds.length
+        ? this.motorcycleRepository.find({ where: { id: In(motorcycleIds), companyId } })
+        : Promise.resolve([] as Motorcycle[]),
+    ]);
+
+    const userIds = riders.map((r) => r.userId).filter(Boolean) as string[];
+    const users = userIds.length
+      ? await this.userRepository.find({ where: { id: In(userIds) } })
+      : [];
+
+    const riderMap = new Map(riders.map((r) => [r.id, r]));
+    const motoMap = new Map(motorcycles.map((m) => [m.id, m]));
+    const userMap = new Map(users.map((u) => [u.id, u]));
+
+    const candidates: AssignmentCandidateDto[] = ranked.candidates.map((c, index) => {
+      const rider = riderMap.get(c.riderId);
+      const user = rider?.userId ? userMap.get(rider.userId) : undefined;
+      const moto = motoMap.get(c.motorcycleId);
+      const riderName = user
+        ? `${user.firstName} ${user.lastName}`.trim()
+        : rider?.phone ?? 'Rider';
+      return {
+        rank: index + 1,
+        riderId: c.riderId,
+        motorcycleId: c.motorcycleId,
+        riderName,
+        riderPhone: rider?.phone ?? '',
+        plateNumber: moto?.plateNumber ?? '',
+        distanceMeters: Math.round(c.distanceMeters),
+        durationSeconds: c.durationSeconds,
+        etaMinutes:
+          c.durationSeconds != null ? Math.max(1, Math.round(c.durationSeconds / 60)) : undefined,
+        latitude: c.latitude,
+        longitude: c.longitude,
+        locationAgeSeconds: c.locationAgeSeconds,
+        recommended: index === 0,
+      };
+    });
+
+    return {
+      tripId: trip.id,
+      method: ranked.method,
+      pickupAddress: trip.pickupAddress,
+      pickupLatitude: trip.pickupLatitude,
+      pickupLongitude: trip.pickupLongitude,
+      recommendedRiderId: candidates[0]?.riderId,
+      candidates,
+    };
+  }
 
   async startAutomaticDispatch(tripId: string): Promise<void> {
     const trip = await this.tripRepository.findOne({ where: { id: tripId } });
@@ -118,6 +237,37 @@ export class DispatchService {
     }
 
     await this.offerToCandidate(trip, candidates[0], candidates.slice(1));
+  }
+
+  /**
+   * Reset NO_RIDER_AVAILABLE / stuck SEARCHING and run auto-dispatch again.
+   */
+  async restartAutomaticDispatch(companyId: string, tripId: string): Promise<void> {
+    const trip = await this.tripRepository.findOne({ where: { id: tripId, companyId } });
+    if (!trip) {
+      throw new NotFoundDomainException('Trip not found.');
+    }
+
+    if (
+      trip.status !== TripStatus.NO_RIDER_AVAILABLE &&
+      trip.status !== TripStatus.SEARCHING_RIDER
+    ) {
+      throw new ConflictDomainException(
+        ErrorCode.TRIP_INVALID_STATE,
+        'Auto-dispatch can only be restarted while searching or when no rider was available.',
+      );
+    }
+
+    if (trip.status === TripStatus.NO_RIDER_AVAILABLE) {
+      assertTransition(trip.status, TripStatus.SEARCHING_RIDER);
+      trip.status = TripStatus.SEARCHING_RIDER;
+      trip.riderId = null;
+      trip.motorcycleId = null;
+      trip.assignedAt = null;
+      await this.tripRepository.save(trip);
+    }
+
+    await this.startAutomaticDispatch(trip.id);
   }
 
   async handleOfferTimeout(tripId: string, riderId: string): Promise<void> {
@@ -202,12 +352,19 @@ export class DispatchService {
 
       if (
         trip.status !== TripStatus.SEARCHING_RIDER &&
-        trip.status !== TripStatus.RIDER_ASSIGNED
+        trip.status !== TripStatus.RIDER_ASSIGNED &&
+        trip.status !== TripStatus.NO_RIDER_AVAILABLE
       ) {
         throw new ConflictDomainException(
           ErrorCode.TRIP_INVALID_STATE,
           'Trip cannot be manually assigned in its current state.',
         );
+      }
+
+      if (trip.status === TripStatus.NO_RIDER_AVAILABLE) {
+        assertTransition(trip.status, TripStatus.SEARCHING_RIDER);
+        trip.status = TripStatus.SEARCHING_RIDER;
+        await tripRepo.save(trip);
       }
 
       const rider = await riderRepo.findOne({

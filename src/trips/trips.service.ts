@@ -19,8 +19,12 @@ import {
   UserRole,
 } from '../common/enums';
 import { BillingService } from '../billing/billing.service';
-import { DispatchService } from '../dispatch/dispatch.service';
+import {
+  AssignmentRecommendationsDto,
+  DispatchService,
+} from '../dispatch/dispatch.service';
 import { Employee } from '../employees/entities/employee.entity';
+import { MapsService } from '../maps/maps.service';
 import { Motorcycle } from '../motorcycles/entities/motorcycle.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { Rider } from '../riders/entities/rider.entity';
@@ -66,7 +70,20 @@ export class TripsService {
     private readonly billingService: BillingService,
     private readonly notificationsService: NotificationsService,
     private readonly whatsappStatusNotifier: WhatsAppStatusNotifierService,
+    private readonly mapsService: MapsService,
   ) {}
+
+  async getAssignmentCandidates(
+    companyId: string,
+    tripId: string,
+  ): Promise<AssignmentRecommendationsDto> {
+    return this.dispatchService.getAssignmentRecommendations(companyId, tripId);
+  }
+
+  async restartDispatch(companyId: string, tripId: string): Promise<TripResponseDto> {
+    await this.dispatchService.restartAutomaticDispatch(companyId, tripId);
+    return this.findOne(companyId, tripId);
+  }
 
   async findAll(
     companyId: string,
@@ -439,7 +456,7 @@ export class TripsService {
       dto.reason,
       actor.id,
     );
-    await this.notifyEmployeeWhatsApp(trip, 'A rider was assigned to your trip');
+    await this.notifyEmployeeRiderAssigned(trip);
     return TripResponseDto.fromEntity(trip);
   }
 
@@ -457,6 +474,7 @@ export class TripsService {
       dto.reason,
       actor.id,
     );
+    await this.notifyEmployeeRiderAssigned(trip);
     return TripResponseDto.fromEntity(trip);
   }
 
@@ -659,5 +677,62 @@ export class TripsService {
       trip.transportRequestId,
       statusLabel,
     );
+  }
+
+  private async notifyEmployeeRiderAssigned(trip: Trip): Promise<void> {
+    if (!trip.transportRequestId || !trip.riderId) {
+      return;
+    }
+
+    const [rider, motorcycle] = await Promise.all([
+      this.riderRepository.findOne({ where: { id: trip.riderId, companyId: trip.companyId } }),
+      trip.motorcycleId
+        ? this.motorcycleRepository.findOne({
+            where: { id: trip.motorcycleId, companyId: trip.companyId },
+          })
+        : Promise.resolve(null),
+    ]);
+
+    if (!rider) {
+      await this.notifyEmployeeWhatsApp(trip, 'A rider was assigned to your trip');
+      return;
+    }
+
+    const user = rider.userId
+      ? await this.userRepository.findOne({ where: { id: rider.userId } })
+      : null;
+    const riderName = user
+      ? `${user.firstName} ${user.lastName}`.trim()
+      : rider.phone;
+
+    let etaMinutes: number | undefined;
+    let distanceMeters: number | undefined;
+    const originLat = rider.currentLatitude;
+    const originLng = rider.currentLongitude;
+    if (originLat != null && originLng != null) {
+      try {
+        const route = await this.mapsService.calculateRoute(
+          { lat: Number(originLat), lng: Number(originLng) },
+          { lat: trip.pickupLatitude, lng: trip.pickupLongitude },
+        );
+        if (route.durationSeconds != null) {
+          etaMinutes = Math.max(1, Math.round(route.durationSeconds / 60));
+        }
+        if (route.distanceMeters != null) {
+          distanceMeters = Math.round(route.distanceMeters);
+        }
+      } catch {
+        // ETA is best-effort; still send plate/phone
+      }
+    }
+
+    await this.whatsappStatusNotifier.notifyRiderAssigned(trip.companyId, trip.transportRequestId, {
+      riderName,
+      riderPhone: rider.phone,
+      plateNumber: motorcycle?.plateNumber ?? 'N/A',
+      etaMinutes,
+      distanceMeters,
+      language: undefined,
+    });
   }
 }

@@ -10,7 +10,7 @@ import {
 } from '../common/enums';
 import { DomainException } from '../common/exceptions/domain.exception';
 import { ErrorCode } from '../common/enums';
-import { toPointWkt } from '../common/utils/geo.util';
+import { toPointGeoJson } from '../common/utils/geo.util';
 import { GpsDevice } from '../gps-devices/entities/gps-device.entity';
 import { IncidentDetectionService } from '../incidents/incident-detection.service';
 import { Motorcycle } from '../motorcycles/entities/motorcycle.entity';
@@ -116,7 +116,7 @@ export class LocationsService {
         companyId: rider.companyId,
         motorcycleId: assignment.motorcycleId,
         riderId: rider.id,
-        position: toPointWkt({ lat: dto.latitude, lng: dto.longitude }),
+        position: toPointGeoJson({ lat: dto.latitude, lng: dto.longitude }),
         latitude: dto.latitude,
         longitude: dto.longitude,
         speed: dto.speed ?? null,
@@ -142,7 +142,7 @@ export class LocationsService {
 
     rider.currentLatitude = String(dto.latitude);
     rider.currentLongitude = String(dto.longitude);
-    rider.position = toPointWkt({ lat: dto.latitude, lng: dto.longitude });
+    rider.position = toPointGeoJson({ lat: dto.latitude, lng: dto.longitude });
     rider.locationUpdatedAt = receivedAt;
     await this.riderRepository.save(rider);
 
@@ -230,7 +230,7 @@ export class LocationsService {
         companyId: device.companyId,
         motorcycleId: device.motorcycleId,
         riderId: assignment?.riderId ?? null,
-        position: toPointWkt({ lat: normalized.latitude, lng: normalized.longitude }),
+        position: toPointGeoJson({ lat: normalized.latitude, lng: normalized.longitude }),
         latitude: normalized.latitude,
         longitude: normalized.longitude,
         speed: normalized.speed ?? null,
@@ -391,7 +391,7 @@ export class LocationsService {
 
     const data = {
       companyId: input.companyId,
-      position: toPointWkt({ lat: input.latitude, lng: input.longitude }),
+      position: toPointGeoJson({ lat: input.latitude, lng: input.longitude }),
       latitude: input.latitude,
       longitude: input.longitude,
       speed: input.speed ?? null,

@@ -3,8 +3,23 @@ export interface GeoPoint {
   lat: number;
 }
 
+/** WKT for raw SQL (ST_GeogFromText / ST_GeomFromText). */
 export function toPointWkt({ lng, lat }: GeoPoint): string {
   return `POINT(${lng} ${lat})`;
+}
+
+/**
+ * GeoJSON Point for TypeORM geography columns.
+ * TypeORM writes via ST_GeomFromGeoJSON — WKT strings fail with "unknown GeoJSON type".
+ */
+export function toPointGeoJson({ lng, lat }: GeoPoint): {
+  type: 'Point';
+  coordinates: [number, number];
+} {
+  return {
+    type: 'Point',
+    coordinates: [lng, lat],
+  };
 }
 
 export function fromPointWkt(wkt: string): GeoPoint | null {

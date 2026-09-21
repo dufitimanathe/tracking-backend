@@ -10,14 +10,18 @@ import {
 } from '../common/exceptions/domain.exception';
 import {
   ErrorCode,
+  MembershipStatus,
+  NotificationType,
   TransportRequestChannel,
   TransportRequestStatus,
   UserRole,
 } from '../common/enums';
-import { toPointWkt } from '../common/utils/geo.util';
+import { toPointGeoJson } from '../common/utils/geo.util';
 import { PricingService } from '../billing/pricing.service';
+import { CompanyMember } from '../company-members/entities/company-member.entity';
 import { Employee } from '../employees/entities/employee.entity';
 import { MapsService } from '../maps/maps.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { REALTIME_EVENTS } from '../realtime/realtime.constants';
 import { RealtimeService } from '../realtime/realtime.service';
 import { CreateTransportRequestDto } from './dto/create-transport-request.dto';
@@ -53,9 +57,12 @@ export class TransportRequestsService {
     private readonly transportRequestRepository: Repository<TransportRequest>,
     @InjectRepository(Employee)
     private readonly employeeRepository: Repository<Employee>,
+    @InjectRepository(CompanyMember)
+    private readonly companyMemberRepository: Repository<CompanyMember>,
     private readonly mapsService: MapsService,
     private readonly pricingService: PricingService,
     private readonly realtimeService: RealtimeService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async create(
@@ -93,14 +100,14 @@ export class TransportRequestsService {
       employeeId,
       createdById: dto.createdById ?? actor.id,
       pickupAddress: dto.pickupAddress,
-      pickupLocation: toPointWkt({
+      pickupLocation: toPointGeoJson({
         lat: dto.pickupLatitude,
         lng: dto.pickupLongitude,
       }),
       pickupLatitude: dto.pickupLatitude,
       pickupLongitude: dto.pickupLongitude,
       destinationAddress: dto.destinationAddress,
-      destinationLocation: toPointWkt({
+      destinationLocation: toPointGeoJson({
         lat: dto.destinationLatitude,
         lng: dto.destinationLongitude,
       }),
@@ -119,11 +126,15 @@ export class TransportRequestsService {
     const saved = await this.transportRequestRepository.save(request);
     const response = TransportRequestResponseDto.fromEntity(saved);
 
-    this.realtimeService.emitToCompany(
-      companyId,
-      REALTIME_EVENTS.TRANSPORT_REQUEST_CREATED,
-      response,
-    );
+    if (saved.status === TransportRequestStatus.PENDING_APPROVAL) {
+      await this.notifyPendingApproval(companyId, response);
+    } else {
+      this.realtimeService.emitToCompany(
+        companyId,
+        REALTIME_EVENTS.TRANSPORT_REQUEST_CREATED,
+        response,
+      );
+    }
 
     return response;
   }
@@ -163,14 +174,14 @@ export class TransportRequestsService {
       companyId,
       employeeId,
       pickupAddress: input.pickupAddress,
-      pickupLocation: toPointWkt({
+      pickupLocation: toPointGeoJson({
         lat: input.pickupLatitude,
         lng: input.pickupLongitude,
       }),
       pickupLatitude: input.pickupLatitude,
       pickupLongitude: input.pickupLongitude,
       destinationAddress: input.destinationAddress,
-      destinationLocation: toPointWkt({
+      destinationLocation: toPointGeoJson({
         lat: input.destinationLatitude,
         lng: input.destinationLongitude,
       }),
@@ -196,7 +207,13 @@ export class TransportRequestsService {
     });
 
     const saved = await this.transportRequestRepository.save(request);
-    return TransportRequestResponseDto.fromEntity(saved);
+    const response = TransportRequestResponseDto.fromEntity(saved);
+
+    if (saved.status === TransportRequestStatus.PENDING_APPROVAL) {
+      await this.notifyPendingApproval(companyId, response);
+    }
+
+    return response;
   }
 
   async confirmRequest(
@@ -211,7 +228,44 @@ export class TransportRequestsService {
 
     request.status = TransportRequestStatus.PENDING_APPROVAL;
     const saved = await this.transportRequestRepository.save(request);
-    return TransportRequestResponseDto.fromEntity(saved);
+    const response = TransportRequestResponseDto.fromEntity(saved);
+    await this.notifyPendingApproval(companyId, response);
+    return response;
+  }
+
+  private async notifyPendingApproval(
+    companyId: string,
+    response: TransportRequestResponseDto,
+  ): Promise<void> {
+    this.realtimeService.emitToCompany(
+      companyId,
+      REALTIME_EVENTS.TRANSPORT_REQUEST_CREATED,
+      response,
+    );
+
+    const admins = await this.companyMemberRepository.find({
+      where: {
+        companyId,
+        role: In([UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR]),
+        status: MembershipStatus.ACTIVE,
+      },
+    });
+
+    if (admins.length === 0) {
+      return;
+    }
+
+    await this.notificationsService.createForCompanyAdmins(
+      companyId,
+      admins.map((admin) => admin.userId),
+      {
+        type: NotificationType.TRANSPORT_REQUEST,
+        title: 'New transport request',
+        message: `${response.pickupAddress} → ${response.destinationAddress}`,
+        relatedEntityType: 'transport_request',
+        relatedEntityId: response.id,
+      },
+    );
   }
 
   async findAll(

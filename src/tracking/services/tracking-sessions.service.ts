@@ -9,7 +9,7 @@ import {
   TrackingSessionStatus,
 } from '../../common/enums';
 import { DomainException } from '../../common/exceptions/domain.exception';
-import { toPointWkt } from '../../common/utils/geo.util';
+import { toPointGeoJson } from '../../common/utils/geo.util';
 import { Motorcycle } from '../../motorcycles/entities/motorcycle.entity';
 import { REALTIME_EVENTS } from '../../realtime/realtime.constants';
 import { RealtimeService } from '../../realtime/realtime.service';
@@ -138,7 +138,7 @@ export class TrackingSessionsService {
     session.endedAt = now;
     session.totalDistanceMeters = distance;
     if (session.endLatitude != null && session.endLongitude != null) {
-      session.endLocation = toPointWkt({
+      session.endLocation = toPointGeoJson({
         lat: session.endLatitude,
         lng: session.endLongitude,
       });

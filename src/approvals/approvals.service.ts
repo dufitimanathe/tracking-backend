@@ -9,7 +9,7 @@ import {
   TripEventType,
   TripStatus,
 } from '../common/enums';
-import { toPointWkt } from '../common/utils/geo.util';
+import { toPointGeoJson } from '../common/utils/geo.util';
 import { DispatchService } from '../dispatch/dispatch.service';
 import { TransportRequest } from '../transport-requests/entities/transport-request.entity';
 import { TripEventsService } from '../trip-events/trip-events.service';
@@ -89,14 +89,14 @@ export class ApprovalsService {
           pickupAddress: request.pickupAddress,
           pickupLatitude: request.pickupLatitude,
           pickupLongitude: request.pickupLongitude,
-          pickupLocation: toPointWkt({
+          pickupLocation: toPointGeoJson({
             lat: request.pickupLatitude,
             lng: request.pickupLongitude,
           }),
           destinationAddress: request.destinationAddress,
           destinationLatitude: request.destinationLatitude,
           destinationLongitude: request.destinationLongitude,
-          destinationLocation: toPointWkt({
+          destinationLocation: toPointGeoJson({
             lat: request.destinationLatitude,
             lng: request.destinationLongitude,
           }),

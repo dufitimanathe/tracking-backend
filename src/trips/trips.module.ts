@@ -4,6 +4,7 @@ import { AuthGuardsModule } from '../auth/auth-guards.module';
 import { BillingModule } from '../billing/billing.module';
 import { DispatchModule } from '../dispatch/dispatch.module';
 import { Employee } from '../employees/entities/employee.entity';
+import { MapsModule } from '../maps/maps.module';
 import { Motorcycle } from '../motorcycles/entities/motorcycle.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { Rider } from '../riders/entities/rider.entity';
@@ -24,6 +25,7 @@ import { TripsService } from './trips.service';
     BillingModule,
     NotificationsModule,
     WhatsappModule,
+    MapsModule,
   ],
   controllers: [TripsController],
   providers: [TripsService],

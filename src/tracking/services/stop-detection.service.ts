@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
-import { haversineDistanceMeters, toPointWkt } from '../../common/utils/geo.util';
+import { haversineDistanceMeters, toPointGeoJson } from '../../common/utils/geo.util';
 import { DriverStop } from '../entities/driver-stop.entity';
 
 @Injectable()
@@ -62,7 +62,7 @@ export class StopDetectionService {
       trackingSessionId: input.trackingSessionId,
       latitude: input.latitude,
       longitude: input.longitude,
-      location: toPointWkt({ lat: input.latitude, lng: input.longitude }),
+      location: toPointGeoJson({ lat: input.latitude, lng: input.longitude }),
       startedAt: input.at,
     });
     return this.stopRepository.save(stop);

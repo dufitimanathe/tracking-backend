@@ -143,6 +143,29 @@ export class TripsController {
     return successResponse(trip);
   }
 
+  @Get('companies/:companyId/trips/:id/assignment-candidates')
+  @CompanyScoped()
+  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR)
+  async assignmentCandidates(
+    @Param('companyId', ParseUUIDPipe) companyId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    const recommendations = await this.tripsService.getAssignmentCandidates(companyId, id);
+    return successResponse(recommendations);
+  }
+
+  @Post('companies/:companyId/trips/:id/redispatch')
+  @CompanyScoped()
+  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR)
+  @ApiSuccessResponse(TripResponseDto)
+  async redispatch(
+    @Param('companyId', ParseUUIDPipe) companyId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    const trip = await this.tripsService.restartDispatch(companyId, id);
+    return successResponse(trip);
+  }
+
   @Post('companies/:companyId/trips/:id/reassign')
   @CompanyScoped()
   @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR)

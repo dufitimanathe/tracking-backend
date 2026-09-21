@@ -9,7 +9,7 @@ import {
   TrackingSessionStatus,
 } from '../../common/enums';
 import { DomainException } from '../../common/exceptions/domain.exception';
-import { toPointWkt } from '../../common/utils/geo.util';
+import { toPointGeoJson } from '../../common/utils/geo.util';
 import { LocationPing } from '../../locations/entities/location-ping.entity';
 import { MotorcycleCurrentLocation } from '../../locations/entities/motorcycle-current-location.entity';
 import { Motorcycle } from '../../motorcycles/entities/motorcycle.entity';
@@ -182,7 +182,7 @@ export class LocationIngestionService {
         tripId: session.tripId ?? null,
         trackingSessionId: session.id,
         clientLocationId: sample.clientLocationId,
-        position: toPointWkt({ lat: sample.latitude, lng: sample.longitude }),
+        position: toPointGeoJson({ lat: sample.latitude, lng: sample.longitude }),
         latitude: sample.latitude,
         longitude: sample.longitude,
         speed: sample.computedSpeedMps,
@@ -236,7 +236,7 @@ export class LocationIngestionService {
     if (session.startLatitude == null) {
       session.startLatitude = sample.latitude;
       session.startLongitude = sample.longitude;
-      session.startLocation = toPointWkt({
+      session.startLocation = toPointGeoJson({
         lat: sample.latitude,
         lng: sample.longitude,
       });
@@ -282,7 +282,7 @@ export class LocationIngestionService {
     await this.upsertCurrentLocation(session, sample, capturedAt);
     rider.currentLatitude = String(sample.latitude);
     rider.currentLongitude = String(sample.longitude);
-    rider.position = toPointWkt({ lat: sample.latitude, lng: sample.longitude });
+    rider.position = toPointGeoJson({ lat: sample.latitude, lng: sample.longitude });
     rider.locationUpdatedAt = receivedAt;
     await this.riderRepository.save(rider);
 
@@ -378,7 +378,7 @@ export class LocationIngestionService {
     }
     current.latitude = sample.latitude;
     current.longitude = sample.longitude;
-    current.position = toPointWkt({ lat: sample.latitude, lng: sample.longitude });
+    current.position = toPointGeoJson({ lat: sample.latitude, lng: sample.longitude });
     current.speed = sample.computedSpeedMps;
     current.heading = sample.heading ?? null;
     current.accuracy = sample.accuracy ?? null;

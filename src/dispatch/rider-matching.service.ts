@@ -56,13 +56,16 @@ export class RiderMatchingService {
     pickupLng: number,
     radiusMeters: number,
     limit?: number,
+    options?: { maxAgeSeconds?: number },
   ): Promise<RankedMatchResult> {
     const candidateLimit =
       limit ??
       this.configService.get<number>('app.ops.assignmentCandidateLimit', { infer: true }) ??
       10;
     const maxAgeSeconds =
-      this.configService.get<number>('app.ops.riderLocationMaxAgeSeconds', { infer: true }) ?? 60;
+      options?.maxAgeSeconds ??
+      this.configService.get<number>('app.ops.riderLocationMaxAgeSeconds', { infer: true }) ??
+      60;
     const matrixFallback =
       this.configService.get<boolean>('app.ops.assignmentMatrixFallback', { infer: true }) ?? true;
 

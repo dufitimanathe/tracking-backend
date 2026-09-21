@@ -25,10 +25,11 @@ WHATSAPP_BUSINESS_ACCOUNT_ID=
 WHATSAPP_APP_SECRET=
 WHATSAPP_API_VERSION=v21.0
 
-OPENAI_API_KEY=
+OPENAI_API_KEY=          # required for WhatsApp NLP (paid OpenAI usage)
 OPENAI_TRANSPORT_MODEL=gpt-4o
-AI_PROVIDER=openai   # or mock / gemini
+AI_PROVIDER=openai       # openai (required for production WhatsApp)
 AI_CONFIDENCE_THRESHOLD=0.75
+WHATSAPP_PICKUP_CHANGE_MINUTES_BEFORE=30  # employee may change pickup until this many minutes before pickup time
 
 GOOGLE_MAPS_API_KEY=   # Places (New) + Routes/Distance Matrix + Geocoding
 
@@ -40,14 +41,15 @@ ASSIGNMENT_MATRIX_FALLBACK=true
 ## Conversation flow
 
 1. Unknown phone → polite decline (no request).
-2. AI intents: create / status / cancel / greeting / help.
-3. Low confidence or missing fields → clarification WhatsApp (no Places call).
+2. OpenAI intents (EN/RW/FR): create / change / status / cancel / greeting / help.
+3. Low confidence or missing fields → clarification in the user's language (no Places call).
 4. Places Text Search (Rwanda-biased). 0 hits → rewrite; 1 → continue; many → numbered/interactive buttons.
 5. Shared WhatsApp location can set pickup coords directly.
-6. Confirm / Cancel buttons → `confirmRequest` → `PENDING_APPROVAL` (does **not** create a new request on every message).
-7. Status updates to employee WhatsApp on approve/reject/assign/arrive/start/complete/cancel when `channel=WHATSAPP`.
+6. Confirm / Cancel buttons (localized) → `confirmRequest` → `PENDING_APPROVAL`.
+7. If the user sends a **different** pickup/destination while waiting to confirm, the bot asks whether to **update** (localized), and reminds them they may change pickup only until `requestedPickupTime - WHATSAPP_PICKUP_CHANGE_MINUTES_BEFORE`.
+8. Status updates to employee WhatsApp on approve/reject/assign/arrive/start/complete/cancel when `channel=WHATSAPP`.
 
-AI never invents coordinates. Places resolves Place IDs + lat/lng.
+AI never invents coordinates. Places resolves Place IDs + lat/lng. Mock parsers are not used in production.
 
 ## Meta templates (ops)
 

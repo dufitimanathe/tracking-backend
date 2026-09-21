@@ -41,8 +41,13 @@ export default registerAs('app', () => ({
     openaiApiKey: process.env.OPENAI_API_KEY || '',
     openaiTransportModel: process.env.OPENAI_TRANSPORT_MODEL || 'gpt-4o',
     geminiApiKey: process.env.GEMINI_API_KEY || '',
-    aiProvider: process.env.AI_PROVIDER || 'mock',
+    aiProvider: process.env.AI_PROVIDER || 'openai',
     aiConfidenceThreshold: parseFloat(process.env.AI_CONFIDENCE_THRESHOLD ?? '0.75'),
+    /** Minutes before requested pickup when the user may still change pickup location. */
+    whatsappPickupChangeMinutesBefore: parseInt(
+      process.env.WHATSAPP_PICKUP_CHANGE_MINUTES_BEFORE ?? '30',
+      10,
+    ),
   },
   /**
    * Phone-first tracking: rider mobile GPS is the primary source.
@@ -93,6 +98,11 @@ export default registerAs('app', () => ({
     riderSearchRadiusMeters: parseInt(process.env.RIDER_SEARCH_RADIUS_METERS ?? '10000', 10),
     riderLocationMaxAgeSeconds: parseInt(
       process.env.RIDER_LOCATION_MAX_AGE_SECONDS ?? '60',
+      10,
+    ),
+    /** Admin manual-assign UI tolerates older last-known GPS than auto-dispatch. */
+    adminRiderLocationMaxAgeSeconds: parseInt(
+      process.env.ADMIN_RIDER_LOCATION_MAX_AGE_SECONDS ?? '86400',
       10,
     ),
     assignmentCandidateLimit: parseInt(process.env.ASSIGNMENT_CANDIDATE_LIMIT ?? '10', 10),

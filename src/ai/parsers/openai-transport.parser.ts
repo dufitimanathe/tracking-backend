@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { plainToInstance } from 'class-transformer';
@@ -6,14 +6,28 @@ import { validateSync } from 'class-validator';
 import { TransportParseIntent } from '../../common/enums';
 import { ParsedTransportRequestDto } from '../dto/parsed-transport-request.dto';
 import { TransportMessageParser } from '../interfaces/transport-message-parser.interface';
-import { MockTransportParser } from './mock-transport.parser';
 
-const SYSTEM_PROMPT = `You are a transport request parser for corporate motorcycle (moto) dispatch in Rwanda (Kigali).
-Languages: English, Kinyarwanda, French, or mixed. Timezone for relative times: Africa/Kigali.
-Extract intent and text fields only. NEVER invent place names, coordinates, latitudes, or longitudes.
-If pickup or destination is unclear, set needsClarification=true and list missingFields.
+const SYSTEM_PROMPT = `You are a transport request parser for corporate motorcycle (moto) dispatch in Rwanda (Kigali and nationwide).
+Languages: English, Kinyarwanda, French, or mixed (code-switching is normal). Timezone: Africa/Kigali.
+
+Extract intent and TEXT place names only. NEVER invent coordinates or place names that were not implied.
+If pickup or destination is unclear, set needsClarification=true and list missingFields (pickupText / destinationText).
+
 Intents: CREATE_TRANSPORT_REQUEST, CHECK_REQUEST_STATUS, CANCEL_REQUEST, CHANGE_REQUEST, GREETING, HELP, UNKNOWN.
-For relative times (e.g. "saa tatu", "in 30 minutes", "à 15h"), resolve to requestedPickupTime ISO-8601 in Africa/Kigali when possible.
+Set language to "en", "rw", or "fr" based on the dominant language of the message.
+
+Kinyarwanda / mixed examples (pickup → destination):
+- "kuva Remera kugera Nyabugogo" → Remera → Nyabugogo
+- "kuva Musanze njya i Kacyiru" / "kuva Musanze nagiye Kacyiru" → Musanze → Kacyiru
+- "ngiye i Musanze mvuye Nyabugogo" → Nyabugogo → Musanze
+- "muramfata Kacyiru, nagiye i Musanze" → Kacyiru → Musanze
+- "ngiye i Musanze mvuye Nyabugogo, muramfata Kacyiru" → prefer muramfata as pickup: Kacyiru → Musanze
+- "nshaka motari kuva Kimironko kugera Kacyiru" → Kimironko → Kacyiru
+- "From Kimironko to Kacyiru" → Kimironko → Kacyiru
+
+If the user is clearly changing an existing trip (new pickup/destination), use CHANGE_REQUEST or CREATE_TRANSPORT_REQUEST with the new places — the app will ask them to confirm the update.
+
+For relative times ("saa tatu", "in 30 minutes", "ejo", "tomorrow"), resolve requestedPickupTime to ISO-8601 in Africa/Kigali when possible.
 Return JSON matching the schema.`;
 
 const RESPONSE_SCHEMA = {
@@ -56,10 +70,7 @@ const RESPONSE_SCHEMA = {
 export class OpenAITransportParser implements TransportMessageParser {
   private readonly logger = new Logger(OpenAITransportParser.name);
 
-  constructor(
-    private readonly configService: ConfigService,
-    private readonly fallback: MockTransportParser,
-  ) {}
+  constructor(private readonly configService: ConfigService) {}
 
   async parse(message: string, context?: { locale?: string }): Promise<ParsedTransportRequestDto> {
     const apiKey = this.configService.get<string>('app.integrations.openaiApiKey', {
@@ -67,8 +78,8 @@ export class OpenAITransportParser implements TransportMessageParser {
     });
 
     if (!apiKey) {
-      this.logger.debug('OpenAI API key not configured, using mock parser');
-      return this.fallback.parse(message, context);
+      this.logger.error('OPENAI_API_KEY is missing — WhatsApp AI parsing requires a paid OpenAI key');
+      throw new ServiceUnavailableException('OpenAI API key is not configured');
     }
 
     const model =
@@ -107,8 +118,7 @@ export class OpenAITransportParser implements TransportMessageParser {
 
       const rawText = this.extractOutputText(response.data);
       if (!rawText) {
-        this.logger.warn('OpenAI returned empty structured output; falling back to mock');
-        return this.fallback.parse(message, context);
+        throw new Error('OpenAI returned empty structured output');
       }
 
       const parsedJson = JSON.parse(rawText) as Record<string, unknown>;
@@ -131,7 +141,6 @@ export class OpenAITransportParser implements TransportMessageParser {
         needsClarification: Boolean(parsedJson.needsClarification),
       });
 
-      // Strip any accidental coordinates if the model ignored instructions
       delete dto.pickupLatitude;
       delete dto.pickupLongitude;
       delete dto.destinationLatitude;
@@ -144,8 +153,11 @@ export class OpenAITransportParser implements TransportMessageParser {
 
       return dto;
     } catch (error) {
-      this.logger.warn(`OpenAI parse failed, using mock: ${String(error)}`);
-      return this.fallback.parse(message, context);
+      if (error instanceof ServiceUnavailableException) {
+        throw error;
+      }
+      this.logger.error(`OpenAI parse failed: ${String(error)}`);
+      throw new ServiceUnavailableException('OpenAI transport parsing failed');
     }
   }
 

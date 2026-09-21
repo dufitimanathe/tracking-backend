@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -19,6 +19,14 @@ import { WhatsAppMessage } from './entities/whatsapp-message.entity';
 import { MetaWhatsAppMessagingProvider } from './providers/meta-whatsapp.messaging-provider';
 import { normalizePhone } from './utils/phone.util';
 import {
+  canChangePickup,
+  normalizePlaceKey,
+  normalizeWhatsAppLang,
+  pickupChangeDeadline,
+  WhatsAppCopy,
+  WhatsAppLang,
+} from './utils/whatsapp-i18n';
+import {
   ConversationDraft,
   WhatsAppConversationService,
 } from './whatsapp-conversation.service';
@@ -36,6 +44,13 @@ export interface InboundWhatsAppJobPayload {
   rawMessage: Record<string, unknown>;
   value: Record<string, unknown>;
 }
+
+type PendingTripUpdate = {
+  type: 'trip_update';
+  proposed: ConversationDraft;
+  pickupChanged: boolean;
+  destChanged: boolean;
+};
 
 @Injectable()
 export class WhatsAppOrchestrationService {
@@ -123,6 +138,17 @@ export class WhatsAppOrchestrationService {
 
       await this.markProcessed(message);
     } catch (error) {
+      if (error instanceof ServiceUnavailableException) {
+        const lang = normalizeWhatsAppLang(
+          /muraho|kuva|ngiye|njya|mvuye|muramfata|nshaka/i.test(payload.textBody ?? '')
+            ? 'rw'
+            : 'en',
+        );
+        await this.reply(phone, WhatsAppCopy.aiUnavailable(lang));
+        message.processingStatus = WhatsAppProcessingStatus.FAILED;
+        await this.messageRepository.save(message);
+        return;
+      }
       this.logger.error(`Failed processing WhatsApp ${payload.externalMessageId}: ${String(error)}`);
       message.processingStatus = WhatsAppProcessingStatus.FAILED;
       await this.messageRepository.save(message);
@@ -141,8 +167,18 @@ export class WhatsAppOrchestrationService {
       return;
     }
     if (buttonId === 'confirm_no' || buttonId === 'CANCEL') {
+      const lang = this.langOf(conversation);
       await this.conversationService.resetDraft(conversation);
-      await this.reply(conversation.phone, 'Cancelled. Send a new pickup and destination when ready.');
+      await this.reply(conversation.phone, WhatsAppCopy.cancelled(lang));
+      return;
+    }
+
+    if (buttonId === 'update_yes') {
+      await this.applyPendingTripUpdate(employee, conversation, message);
+      return;
+    }
+    if (buttonId === 'update_no') {
+      await this.rejectPendingTripUpdate(employee, conversation);
       return;
     }
 
@@ -189,16 +225,38 @@ export class WhatsAppOrchestrationService {
     text: string,
   ): Promise<void> {
     const trimmed = text.trim();
+    const langHint = this.langOf(conversation);
     if (!trimmed) {
-      await this.reply(conversation.phone, 'Please send your pickup and destination as text.');
+      await this.reply(conversation.phone, WhatsAppCopy.emptyText(langHint));
+      return;
+    }
+
+    const pendingUpdate = conversation.pendingCandidates as PendingTripUpdate | null;
+    if (pendingUpdate?.type === 'trip_update') {
+      if (/^(yes|y|confirm|oui|yego|hindura|update)\.?$/i.test(trimmed)) {
+        await this.applyPendingTripUpdate(employee, conversation, message);
+        return;
+      }
+      if (/^(no|n|cancel|annuler|hagarika|rekana|keep)\.?$/i.test(trimmed)) {
+        await this.rejectPendingTripUpdate(employee, conversation);
+        return;
+      }
+    }
+
+    if (
+      conversation.state === WhatsAppConversationState.READY_FOR_CONFIRMATION &&
+      /^(yes|y|confirm|oui|yego|emeza)\.?$/i.test(trimmed)
+    ) {
+      await this.confirmDraft(employee, conversation, message);
       return;
     }
 
     if (
       conversation.state === WhatsAppConversationState.READY_FOR_CONFIRMATION &&
-      /^(yes|y|confirm|oui|yego)$/i.test(trimmed)
+      /^(no|n|cancel|annuler|hagarika)\.?$/i.test(trimmed)
     ) {
-      await this.confirmDraft(employee, conversation, message);
+      await this.conversationService.resetDraft(conversation);
+      await this.reply(conversation.phone, WhatsAppCopy.cancelled(langHint));
       return;
     }
 
@@ -210,32 +268,40 @@ export class WhatsAppOrchestrationService {
       return;
     }
 
+    const previousState = conversation.state;
+
     await this.conversationService.update(conversation, {
       state: WhatsAppConversationState.PARSING,
     });
 
-    const parsed = await this.aiService.parseTransportMessage(trimmed, {
-      locale: conversation.language ?? undefined,
-    });
+    let parsed: ParsedTransportRequestDto;
+    try {
+      parsed = await this.aiService.parseTransportMessage(trimmed, {
+        locale: conversation.language ?? undefined,
+      });
+    } catch (error) {
+      if (error instanceof ServiceUnavailableException) {
+        await this.reply(conversation.phone, WhatsAppCopy.aiUnavailable(langHint));
+        return;
+      }
+      throw error;
+    }
 
     await this.persistParsing(employee, message, trimmed, parsed);
+    const lang = normalizeWhatsAppLang(parsed.language ?? conversation.language);
 
     if (parsed.intent === TransportParseIntent.GREETING) {
-      await this.reply(
-        conversation.phone,
-        'Hello! Send a transport request like: From Kimironko to Kacyiru at 3pm',
-      );
+      await this.reply(conversation.phone, WhatsAppCopy.greeting(lang));
       await this.conversationService.update(conversation, {
         state: WhatsAppConversationState.NEW,
+        language: lang,
       });
       return;
     }
 
     if (parsed.intent === TransportParseIntent.HELP) {
-      await this.reply(
-        conversation.phone,
-        'I can book motorcycle transport. Example: From Remera to Nyabugogo. You can also share your pickup location.',
-      );
+      await this.reply(conversation.phone, WhatsAppCopy.help(lang));
+      await this.conversationService.update(conversation, { language: lang });
       return;
     }
 
@@ -246,15 +312,16 @@ export class WhatsAppOrchestrationService {
 
     if (parsed.intent === TransportParseIntent.CANCEL_REQUEST) {
       await this.conversationService.resetDraft(conversation);
-      await this.reply(conversation.phone, 'Your draft request was cancelled.');
+      await this.reply(conversation.phone, WhatsAppCopy.draftCancelled(lang));
       return;
     }
 
-    if (parsed.intent !== TransportParseIntent.CREATE_TRANSPORT_REQUEST) {
-      await this.reply(
-        conversation.phone,
-        'I could not understand that. Try: From [pickup] to [destination]',
-      );
+    const isTripIntent =
+      parsed.intent === TransportParseIntent.CREATE_TRANSPORT_REQUEST ||
+      parsed.intent === TransportParseIntent.CHANGE_REQUEST;
+
+    if (!isTripIntent) {
+      await this.reply(conversation.phone, WhatsAppCopy.notUnderstood(lang));
       return;
     }
 
@@ -265,38 +332,243 @@ export class WhatsAppOrchestrationService {
       (parsed.missingFields && parsed.missingFields.length > 0)
     ) {
       const missing = parsed.missingFields?.join(', ') || 'pickup/destination';
-      await this.reply(
-        conversation.phone,
-        `Could you clarify your trip? Missing: ${missing}. Example: From Kimironko to Kacyiru`,
-      );
+      await this.reply(conversation.phone, WhatsAppCopy.clarify(lang, missing));
       await this.conversationService.update(conversation, {
         state: WhatsAppConversationState.WAITING_FOR_PICKUP,
         draft: {
-          ...this.conversationService.getDraft(conversation),
           notes: trimmed,
-          language: parsed.language,
+          language: lang,
         },
+        pendingCandidates: null,
+        transportRequestId: null,
+        language: lang,
       });
       return;
     }
 
-    const draft: ConversationDraft = {
-      ...this.conversationService.getDraft(conversation),
+    const proposed: ConversationDraft = {
       pickupText: parsed.pickupText ?? parsed.pickupAddress,
       destinationText: parsed.destinationText ?? parsed.destinationAddress,
       requestedPickupTime: parsed.requestedPickupTime,
       passengerCount: parsed.passengerCount ?? 1,
       notes: parsed.notes ?? trimmed,
-      language: parsed.language,
+      language: lang,
+    };
+
+    if (previousState === WhatsAppConversationState.READY_FOR_CONFIRMATION) {
+      const handled = await this.handleTripChangeWhileConfirming(
+        employee,
+        conversation,
+        proposed,
+        lang,
+      );
+      if (handled) {
+        return;
+      }
+    }
+
+    await this.startFreshTrip(employee, conversation, proposed, lang);
+  }
+
+  private async handleTripChangeWhileConfirming(
+    employee: Employee,
+    conversation: WhatsAppConversation,
+    proposed: ConversationDraft,
+    lang: WhatsAppLang,
+  ): Promise<boolean> {
+    const current = this.conversationService.getDraft(conversation);
+    const currentPickup = current.pickupDisplayName ?? current.pickupText ?? '';
+    const currentDest = current.destinationDisplayName ?? current.destinationText ?? '';
+    const newPickup = proposed.pickupText ?? '';
+    const newDest = proposed.destinationText ?? '';
+
+    const pickupChanged =
+      normalizePlaceKey(newPickup) !== normalizePlaceKey(currentPickup) && Boolean(newPickup);
+    const destChanged =
+      normalizePlaceKey(newDest) !== normalizePlaceKey(currentDest) && Boolean(newDest);
+
+    if (!pickupChanged && !destChanged) {
+      await this.promptConfirmation(employee, conversation, current);
+      return true;
+    }
+
+    const deadline = this.getPickupDeadline(current.requestedPickupTime ?? proposed.requestedPickupTime);
+    const pickupAllowed = canChangePickup(deadline);
+
+    if (pickupChanged && !pickupAllowed && deadline) {
+      await this.reply(
+        conversation.phone,
+        WhatsAppCopy.pickupChangeLocked(lang, deadline.toISOString()),
+      );
+      if (destChanged) {
+        // Allow destination-only update proposal
+        const destOnly: ConversationDraft = {
+          ...current,
+          destinationText: newDest,
+          destinationLatitude: undefined,
+          destinationLongitude: undefined,
+          destinationPlaceId: undefined,
+          destinationDisplayName: undefined,
+          notes: proposed.notes,
+          language: lang,
+        };
+        await this.promptTripUpdate(conversation, current, destOnly, false, true, lang);
+      } else {
+        await this.promptConfirmation(employee, conversation, current);
+      }
+      return true;
+    }
+
+    await this.promptTripUpdate(
+      conversation,
+      current,
+      proposed,
+      pickupChanged,
+      destChanged,
+      lang,
+    );
+    return true;
+  }
+
+  private async promptTripUpdate(
+    conversation: WhatsAppConversation,
+    current: ConversationDraft,
+    proposed: ConversationDraft,
+    pickupChanged: boolean,
+    destChanged: boolean,
+    lang: WhatsAppLang,
+  ): Promise<void> {
+    const currentPickup = current.pickupDisplayName ?? current.pickupText ?? '—';
+    const currentDest = current.destinationDisplayName ?? current.destinationText ?? '—';
+    const newPickup = proposed.pickupText ?? currentPickup;
+    const newDest = proposed.destinationText ?? currentDest;
+    const deadline = this.getPickupDeadline(
+      proposed.requestedPickupTime ?? current.requestedPickupTime,
+    );
+    const cutoffLabel =
+      deadline && canChangePickup(deadline)
+        ? WhatsAppCopy.pickupChangeAllowedUntil(lang, deadline.toISOString())
+        : null;
+
+    const pending: PendingTripUpdate = {
+      type: 'trip_update',
+      proposed: {
+        ...proposed,
+        pickupText: pickupChanged ? proposed.pickupText : current.pickupText,
+        destinationText: destChanged ? proposed.destinationText : current.destinationText,
+        // Keep existing resolved coords for sides that did not change
+        ...(pickupChanged
+          ? {}
+          : {
+              pickupLatitude: current.pickupLatitude,
+              pickupLongitude: current.pickupLongitude,
+              pickupPlaceId: current.pickupPlaceId,
+              pickupDisplayName: current.pickupDisplayName,
+              pickupText: current.pickupText,
+            }),
+        ...(destChanged
+          ? {}
+          : {
+              destinationLatitude: current.destinationLatitude,
+              destinationLongitude: current.destinationLongitude,
+              destinationPlaceId: current.destinationPlaceId,
+              destinationDisplayName: current.destinationDisplayName,
+              destinationText: current.destinationText,
+            }),
+      },
+      pickupChanged,
+      destChanged,
     };
 
     await this.conversationService.update(conversation, {
-      draft,
-      language: parsed.language ?? conversation.language,
-      state: WhatsAppConversationState.WAITING_FOR_LOCATION_SELECTION,
+      state: WhatsAppConversationState.READY_FOR_CONFIRMATION,
+      pendingCandidates: pending as unknown as Record<string, unknown>,
+      language: lang,
     });
 
+    await this.messaging.sendButtons({
+      phone: conversation.phone,
+      body: WhatsAppCopy.askTripUpdate(
+        lang,
+        currentPickup,
+        currentDest,
+        newPickup,
+        newDest,
+        pickupChanged,
+        destChanged,
+        cutoffLabel,
+      ),
+      buttons: [
+        { id: 'update_yes', title: WhatsAppCopy.updateButtonYes(lang) },
+        { id: 'update_no', title: WhatsAppCopy.updateButtonNo(lang) },
+      ],
+    });
+  }
+
+  private async applyPendingTripUpdate(
+    employee: Employee,
+    conversation: WhatsAppConversation,
+    _message: WhatsAppMessage,
+  ): Promise<void> {
+    const pending = conversation.pendingCandidates as PendingTripUpdate | null;
+    if (pending?.type !== 'trip_update') {
+      return;
+    }
+    const lang = normalizeWhatsAppLang(pending.proposed.language ?? conversation.language);
+    const draft: ConversationDraft = { ...pending.proposed, language: lang };
+    // Force re-resolve sides that changed (coords cleared in promptTripUpdate)
+    await this.conversationService.update(conversation, {
+      draft,
+      pendingCandidates: null,
+      transportRequestId: null,
+      language: lang,
+      state: WhatsAppConversationState.WAITING_FOR_LOCATION_SELECTION,
+    });
     await this.resolvePlacesAndContinue(employee, conversation, draft);
+  }
+
+  private async rejectPendingTripUpdate(
+    employee: Employee,
+    conversation: WhatsAppConversation,
+  ): Promise<void> {
+    const lang = this.langOf(conversation);
+    const draft = this.conversationService.getDraft(conversation);
+    await this.conversationService.update(conversation, {
+      pendingCandidates: null,
+      state: WhatsAppConversationState.READY_FOR_CONFIRMATION,
+    });
+    await this.reply(conversation.phone, WhatsAppCopy.keepingCurrentTrip(lang));
+    await this.promptConfirmation(employee, conversation, draft);
+  }
+
+  private async startFreshTrip(
+    employee: Employee,
+    conversation: WhatsAppConversation,
+    draft: ConversationDraft,
+    lang: WhatsAppLang,
+  ): Promise<void> {
+    await this.conversationService.update(conversation, {
+      draft,
+      language: lang,
+      state: WhatsAppConversationState.WAITING_FOR_LOCATION_SELECTION,
+      pendingCandidates: null,
+      transportRequestId: null,
+    });
+    await this.resolvePlacesAndContinue(employee, conversation, draft);
+  }
+
+  private langOf(conversation: WhatsAppConversation): WhatsAppLang {
+    return normalizeWhatsAppLang(
+      this.conversationService.getDraft(conversation).language ?? conversation.language,
+    );
+  }
+
+  private getPickupDeadline(requestedPickupTime?: string): Date | null {
+    const minutes =
+      this.configService.get<number>('app.integrations.whatsappPickupChangeMinutesBefore', {
+        infer: true,
+      }) ?? 30;
+    return pickupChangeDeadline(requestedPickupTime, minutes);
   }
 
   private async resolvePlacesAndContinue(
@@ -304,10 +576,12 @@ export class WhatsAppOrchestrationService {
     conversation: WhatsAppConversation,
     draft: ConversationDraft,
   ): Promise<void> {
+    const lang = normalizeWhatsAppLang(draft.language ?? conversation.language);
+
     if (draft.pickupLatitude == null || draft.pickupLongitude == null) {
       const pickupQuery = draft.pickupText;
       if (!pickupQuery) {
-        await this.reply(conversation.phone, 'Where should we pick you up?');
+        await this.reply(conversation.phone, WhatsAppCopy.askPickup(lang));
         await this.conversationService.update(conversation, {
           state: WhatsAppConversationState.WAITING_FOR_PICKUP,
           draft,
@@ -318,13 +592,13 @@ export class WhatsAppOrchestrationService {
       const candidates = await this.mapsService.searchPlaces({
         query: pickupQuery,
         regionCode: 'RW',
-        languageCode: draft.language ?? 'en',
+        languageCode: lang,
       });
 
       if (candidates.length === 0) {
         await this.reply(
           conversation.phone,
-          `I could not find "${pickupQuery}". Please rewrite the pickup location.`,
+          WhatsAppCopy.placeNotFound(lang, 'pickup', pickupQuery),
         );
         await this.conversationService.update(conversation, {
           state: WhatsAppConversationState.WAITING_FOR_PICKUP,
@@ -344,7 +618,7 @@ export class WhatsAppOrchestrationService {
     if (draft.destinationLatitude == null || draft.destinationLongitude == null) {
       const destQuery = draft.destinationText;
       if (!destQuery) {
-        await this.reply(conversation.phone, 'Where is your destination?');
+        await this.reply(conversation.phone, WhatsAppCopy.askDestination(lang));
         await this.conversationService.update(conversation, {
           state: WhatsAppConversationState.WAITING_FOR_DESTINATION,
           draft,
@@ -355,13 +629,13 @@ export class WhatsAppOrchestrationService {
       const candidates = await this.mapsService.searchPlaces({
         query: destQuery,
         regionCode: 'RW',
-        languageCode: draft.language ?? 'en',
+        languageCode: lang,
       });
 
       if (candidates.length === 0) {
         await this.reply(
           conversation.phone,
-          `I could not find "${destQuery}". Please rewrite the destination.`,
+          WhatsAppCopy.placeNotFound(lang, 'destination', destQuery),
         );
         await this.conversationService.update(conversation, {
           state: WhatsAppConversationState.WAITING_FOR_DESTINATION,
@@ -465,26 +739,28 @@ export class WhatsAppOrchestrationService {
     conversation: WhatsAppConversation,
     draft: ConversationDraft,
   ): Promise<void> {
+    const lang = normalizeWhatsAppLang(draft.language ?? conversation.language);
     await this.conversationService.update(conversation, {
       state: WhatsAppConversationState.READY_FOR_CONFIRMATION,
       draft,
       pendingCandidates: null,
+      language: lang,
     });
 
     const pickup = draft.pickupDisplayName ?? draft.pickupText ?? 'Pickup';
     const dest = draft.destinationDisplayName ?? draft.destinationText ?? 'Destination';
-    const when = draft.requestedPickupTime
-      ? new Date(draft.requestedPickupTime).toLocaleString('en-RW', {
-          timeZone: 'Africa/Kigali',
-        })
-      : 'soon';
+    const deadline = this.getPickupDeadline(draft.requestedPickupTime);
+    const cutoffLabel =
+      deadline && canChangePickup(deadline)
+        ? WhatsAppCopy.pickupChangeAllowedUntil(lang, deadline.toISOString())
+        : null;
 
     await this.messaging.sendButtons({
       phone: conversation.phone,
-      body: `Confirm trip:\n${pickup} → ${dest}\nTime: ${when}`,
+      body: WhatsAppCopy.confirmTrip(lang, pickup, dest, draft.requestedPickupTime, cutoffLabel),
       buttons: [
-        { id: 'confirm_yes', title: 'Confirm' },
-        { id: 'confirm_no', title: 'Cancel' },
+        { id: 'confirm_yes', title: WhatsAppCopy.confirmButtonYes(lang) },
+        { id: 'confirm_no', title: WhatsAppCopy.confirmButtonNo(lang) },
       ],
     });
   }
@@ -552,9 +828,10 @@ export class WhatsAppOrchestrationService {
       pendingCandidates: null,
     });
 
+    const lang = normalizeWhatsAppLang(conversation.language);
     await this.reply(
       conversation.phone,
-      `Request submitted for supervisor approval (${confirmed.pickupAddress} → ${confirmed.destinationAddress}).`,
+      WhatsAppCopy.submitted(lang, confirmed.pickupAddress, confirmed.destinationAddress),
     );
   }
 

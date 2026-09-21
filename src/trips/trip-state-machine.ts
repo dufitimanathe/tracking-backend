@@ -18,13 +18,16 @@ const VALID_TRANSITIONS: Record<TripStatus, TripStatus[]> = {
   [TripStatus.IN_PROGRESS]: [TripStatus.COMPLETED, TripStatus.CANCELLED],
   [TripStatus.COMPLETED]: [],
   [TripStatus.CANCELLED]: [],
-  [TripStatus.NO_RIDER_AVAILABLE]: [],
+  [TripStatus.NO_RIDER_AVAILABLE]: [
+    TripStatus.SEARCHING_RIDER,
+    TripStatus.RIDER_ASSIGNED,
+    TripStatus.CANCELLED,
+  ],
 };
 
 const TERMINAL_STATUSES = new Set<TripStatus>([
   TripStatus.COMPLETED,
   TripStatus.CANCELLED,
-  TripStatus.NO_RIDER_AVAILABLE,
 ]);
 
 export function assertTransition(from: TripStatus, to: TripStatus): void {

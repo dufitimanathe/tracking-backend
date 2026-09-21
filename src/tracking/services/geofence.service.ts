@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { GeofenceEventType } from '../../common/enums';
-import { toPointWkt } from '../../common/utils/geo.util';
+import { toPointGeoJson } from '../../common/utils/geo.util';
 import { REALTIME_EVENTS } from '../../realtime/realtime.constants';
 import { RealtimeService } from '../../realtime/realtime.service';
 import { Geofence } from '../entities/geofence.entity';
@@ -38,7 +38,7 @@ export class GeofenceService {
       longitude: dto.longitude,
       radiusMeters: dto.radiusMeters ?? 100,
       active: true,
-      center: toPointWkt({ lat: dto.latitude, lng: dto.longitude }),
+      center: toPointGeoJson({ lat: dto.latitude, lng: dto.longitude }),
     });
     return this.geofenceRepository.save(entity);
   }
@@ -59,7 +59,7 @@ export class GeofenceService {
     if (dto.latitude != null && dto.longitude != null) {
       entity.latitude = dto.latitude;
       entity.longitude = dto.longitude;
-      entity.center = toPointWkt({ lat: dto.latitude, lng: dto.longitude });
+      entity.center = toPointGeoJson({ lat: dto.latitude, lng: dto.longitude });
     }
     return this.geofenceRepository.save(entity);
   }
