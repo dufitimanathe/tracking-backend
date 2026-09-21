@@ -75,4 +75,19 @@ export class TransportRequest extends TenantEntity {
 
   @Column({ type: 'text', nullable: true })
   notes?: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  pickupPlaceId?: string | null;
+
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  destinationPlaceId?: string | null;
+
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  pickupDisplayName?: string | null;
+
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  destinationDisplayName?: string | null;
+
+  @Column({ type: 'boolean', default: false })
+  aiAssisted!: boolean;
 }

@@ -140,6 +140,11 @@ export class TransportRequestsService {
       destinationLongitude: number;
       requestedPickupTime?: string;
       notes?: string;
+      pickupPlaceId?: string;
+      destinationPlaceId?: string;
+      pickupDisplayName?: string;
+      destinationDisplayName?: string;
+      aiAssisted?: boolean;
     },
     pendingConfirmation = true,
   ): Promise<TransportRequestResponseDto> {
@@ -183,6 +188,11 @@ export class TransportRequestsService {
       estimatedDurationMinutes: Math.ceil(route.durationSeconds / 60),
       estimatedPrice,
       notes: input.notes ?? null,
+      pickupPlaceId: input.pickupPlaceId ?? null,
+      destinationPlaceId: input.destinationPlaceId ?? null,
+      pickupDisplayName: input.pickupDisplayName ?? null,
+      destinationDisplayName: input.destinationDisplayName ?? null,
+      aiAssisted: input.aiAssisted ?? true,
     });
 
     const saved = await this.transportRequestRepository.save(request);

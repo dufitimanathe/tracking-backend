@@ -38,6 +38,7 @@ import { HealthModule } from './health/health.module';
 import { ReportsModule } from './reports/reports.module';
 import { RedisModule } from './common/redis/redis.module';
 import { TrackingModule } from './tracking/tracking.module';
+import { IntegrationsModule } from './integrations/integrations.module';
 
 @Module({
   imports: [
@@ -113,6 +114,7 @@ import { TrackingModule } from './tracking/tracking.module';
     HealthModule,
     ReportsModule,
     TrackingModule,
+    IntegrationsModule,
   ],
   providers: [
     { provide: APP_FILTER, useClass: GlobalExceptionFilter },

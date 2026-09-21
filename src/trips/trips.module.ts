@@ -10,6 +10,7 @@ import { Rider } from '../riders/entities/rider.entity';
 import { TransportRequest } from '../transport-requests/entities/transport-request.entity';
 import { TripEventsModule } from '../trip-events/trip-events.module';
 import { User } from '../users/entities/user.entity';
+import { WhatsappModule } from '../whatsapp/whatsapp.module';
 import { Trip } from './entities/trip.entity';
 import { TripsController } from './trips.controller';
 import { TripsService } from './trips.service';
@@ -22,6 +23,7 @@ import { TripsService } from './trips.service';
     DispatchModule,
     BillingModule,
     NotificationsModule,
+    WhatsappModule,
   ],
   controllers: [TripsController],
   providers: [TripsService],

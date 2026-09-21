@@ -83,4 +83,15 @@ export class TransportRequestsController {
     const request = await this.transportRequestsService.cancel(companyId, id);
     return successResponse(request);
   }
+
+  @Post(':id/confirm')
+  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR, UserRole.EMPLOYEE)
+  @ApiSuccessResponse(TransportRequestResponseDto)
+  async confirm(
+    @Param('companyId', ParseUUIDPipe) companyId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    const request = await this.transportRequestsService.confirmRequest(companyId, id);
+    return successResponse(request);
+  }
 }

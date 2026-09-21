@@ -10,6 +10,7 @@ import {
   NotFoundDomainException,
 } from '../common/exceptions/domain.exception';
 import {
+  AssignmentMethod,
   ErrorCode,
   RiderAvailabilityStatus,
   TransportRequestStatus,
@@ -27,7 +28,9 @@ import {
   DISPATCH_TIMEOUT_JOB,
   dispatchCandidatesKey,
 } from './dispatch.constants';
+import { AssignmentAttempt } from './entities/assignment-attempt.entity';
 import { RiderMatchCandidate, RiderMatchingService } from './rider-matching.service';
+import { WhatsAppStatusNotifierService } from '../whatsapp/whatsapp-status-notifier.service';
 
 @Injectable()
 export class DispatchService {
@@ -40,6 +43,8 @@ export class DispatchService {
     private readonly riderRepository: Repository<Rider>,
     @InjectRepository(TransportRequest)
     private readonly transportRequestRepository: Repository<TransportRequest>,
+    @InjectRepository(AssignmentAttempt)
+    private readonly assignmentAttemptRepository: Repository<AssignmentAttempt>,
     private readonly riderMatchingService: RiderMatchingService,
     private readonly tripEventsService: TripEventsService,
     private readonly dataSource: DataSource,
@@ -48,6 +53,7 @@ export class DispatchService {
     private readonly dispatchQueue: Queue,
     @Inject(REDIS_CLIENT)
     private readonly redis: Redis,
+    private readonly whatsappStatusNotifier: WhatsAppStatusNotifierService,
   ) {}
 
   async startAutomaticDispatch(tripId: string): Promise<void> {
@@ -65,11 +71,38 @@ export class DispatchService {
       { infer: true },
     )!;
 
-    const candidates = await this.riderMatchingService.findNearbyAvailableRiders(
+    const ranked = await this.riderMatchingService.findAndRankCandidates(
       trip.companyId,
       trip.pickupLatitude,
       trip.pickupLongitude,
       radiusMeters,
+    );
+
+    const candidates = ranked.candidates;
+
+    await this.assignmentAttemptRepository.save(
+      this.assignmentAttemptRepository.create({
+        companyId: trip.companyId,
+        tripId: trip.id,
+        transportRequestId: trip.transportRequestId,
+        candidates: candidates.map((c) => ({
+          riderId: c.riderId,
+          motorcycleId: c.motorcycleId,
+          distanceMeters: c.distanceMeters,
+          durationSeconds: c.durationSeconds,
+          locationAgeSeconds: c.locationAgeSeconds,
+        })),
+        selectedRiderId: candidates[0]?.riderId ?? null,
+        selectedMotorcycleId: candidates[0]?.motorcycleId ?? null,
+        method: ranked.method,
+        reason:
+          candidates.length === 0
+            ? 'No fresh GPS candidates'
+            : ranked.method === AssignmentMethod.POSTGIS_FALLBACK
+              ? 'Route Matrix unavailable; PostGIS order used'
+              : 'Route Matrix ranked',
+        success: candidates.length > 0,
+      }),
     );
 
     await this.redis.set(
@@ -101,7 +134,10 @@ export class DispatchService {
         return;
       }
 
-      if (trip.status !== TripStatus.RIDER_ASSIGNED || trip.riderId !== riderId) {
+      if (
+        trip.status !== TripStatus.RIDER_ASSIGNED ||
+        trip.riderId !== riderId
+      ) {
         return;
       }
 
@@ -153,6 +189,7 @@ export class DispatchService {
       const tripRepo = manager.getRepository(Trip);
       const riderRepo = manager.getRepository(Rider);
       const requestRepo = manager.getRepository(TransportRequest);
+      const attemptRepo = manager.getRepository(AssignmentAttempt);
 
       const trip = await tripRepo.findOne({
         where: { id: tripId, companyId },
@@ -182,7 +219,10 @@ export class DispatchService {
         throw new NotFoundDomainException('Rider not found.');
       }
 
-      if (rider.availabilityStatus !== RiderAvailabilityStatus.AVAILABLE) {
+      if (
+        rider.availabilityStatus !== RiderAvailabilityStatus.AVAILABLE &&
+        rider.availabilityStatus !== RiderAvailabilityStatus.RESERVED
+      ) {
         throw new ConflictDomainException(
           ErrorCode.RIDER_NOT_AVAILABLE,
           'Rider is not available for assignment.',
@@ -197,10 +237,7 @@ export class DispatchService {
         }
       }
 
-      if (
-        trip.status === TripStatus.RIDER_ASSIGNED &&
-        trip.riderId === riderId
-      ) {
+      if (trip.status === TripStatus.RIDER_ASSIGNED && trip.riderId === riderId) {
         return trip;
       }
 
@@ -226,6 +263,20 @@ export class DispatchService {
         request.status = TransportRequestStatus.ASSIGNED;
         await requestRepo.save(request);
       }
+
+      await attemptRepo.save(
+        attemptRepo.create({
+          companyId,
+          tripId: trip.id,
+          transportRequestId: trip.transportRequestId,
+          candidates: [{ riderId, motorcycleId: trip.motorcycleId }],
+          selectedRiderId: riderId,
+          selectedMotorcycleId: trip.motorcycleId,
+          method: AssignmentMethod.MANUAL,
+          reason: reason ?? 'Manual assignment',
+          success: true,
+        }),
+      );
 
       await this.tripEventsService.appendEvent(
         companyId,
@@ -280,6 +331,8 @@ export class DispatchService {
       3600,
     );
 
+    let offered = false;
+
     await this.dataSource.transaction(async (manager) => {
       const tripRepo = manager.getRepository(Trip);
       const riderRepo = manager.getRepository(Rider);
@@ -299,7 +352,11 @@ export class DispatchService {
         lock: { mode: 'pessimistic_write' },
       });
 
+      // Skip to next when rider no longer AVAILABLE (fixes previous silent gap)
       if (!rider || rider.availabilityStatus !== RiderAvailabilityStatus.AVAILABLE) {
+        this.logger.debug(
+          `Skipping rider ${candidate.riderId} — not AVAILABLE for trip ${trip.id}`,
+        );
         return;
       }
 
@@ -310,7 +367,8 @@ export class DispatchService {
       lockedTrip.assignedAt = new Date();
       await tripRepo.save(lockedTrip);
 
-      rider.availabilityStatus = RiderAvailabilityStatus.ASSIGNED;
+      // Reserve until rider accepts (accept path sets ASSIGNED)
+      rider.availabilityStatus = RiderAvailabilityStatus.RESERVED;
       await riderRepo.save(rider);
 
       const request = await requestRepo.findOne({
@@ -330,9 +388,33 @@ export class DispatchService {
           riderId: candidate.riderId,
           motorcycleId: candidate.motorcycleId,
           distanceMeters: candidate.distanceMeters,
+          durationSeconds: candidate.durationSeconds,
+          reserved: true,
         },
       );
+
+      offered = true;
     });
+
+    if (!offered) {
+      if (remainingCandidates.length === 0) {
+        const fresh = await this.tripRepository.findOne({ where: { id: trip.id } });
+        if (fresh && fresh.status === TripStatus.SEARCHING_RIDER) {
+          await this.markNoRiderAvailable(fresh);
+        }
+        return;
+      }
+      await this.offerToCandidate(trip, remainingCandidates[0], remainingCandidates.slice(1));
+      return;
+    }
+
+    if (trip.transportRequestId) {
+      await this.whatsappStatusNotifier.notifyRequestStatus(
+        trip.companyId,
+        trip.transportRequestId,
+        'Rider assigned — waiting for acceptance',
+      );
+    }
 
     await this.scheduleOfferTimeout(trip.id, candidate.riderId);
   }

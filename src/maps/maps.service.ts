@@ -7,6 +7,11 @@ import {
   RouteResult,
   RoutingProvider,
 } from './interfaces/routing-provider.interface';
+import {
+  LocationSearchOptions,
+  PlaceCandidate,
+} from './interfaces/location-provider.interface';
+import { GooglePlacesProvider } from './providers/google-places.provider';
 import { GoogleRoutingProvider } from './providers/google-routing.provider';
 import { HaversineRoutingProvider } from './providers/haversine-routing.provider';
 import { isOffRoute } from './utils/polyline.util';
@@ -28,6 +33,7 @@ export class MapsService {
     private readonly configService: ConfigService,
     private readonly googleProvider: GoogleRoutingProvider,
     private readonly haversineProvider: HaversineRoutingProvider,
+    private readonly placesProvider: GooglePlacesProvider,
   ) {}
 
   getProvider(): RoutingProvider {
@@ -52,7 +58,7 @@ export class MapsService {
       notes: [
         'Paste GOOGLE_MAPS_API_KEY in backend/.env (server key, IP-restricted).',
         'Paste NEXT_PUBLIC_GOOGLE_MAPS_API_KEY in frontend/.env.local (browser key, HTTP-referrer-restricted).',
-        'Enable: Maps JavaScript API, Geocoding API, Routes API (and optionally Distance Matrix / Directions).',
+        'Enable: Maps JavaScript API, Geocoding API, Places API (New), Routes API (and optionally Distance Matrix / Directions).',
         'Primary location source is rider phone GPS via POST /locations/rider. Hardware GPS is optional.',
       ],
     };
@@ -71,6 +77,25 @@ export class MapsService {
     destinations: GeoCoordinate[],
   ): Promise<MatrixResult> {
     return this.getProvider().calculateMatrix(origins, destinations);
+  }
+
+  computeRouteMatrix(
+    origins: GeoCoordinate[],
+    destinations: GeoCoordinate[],
+  ): Promise<MatrixResult> {
+    const provider = this.getProvider();
+    if (provider.computeRouteMatrix) {
+      return provider.computeRouteMatrix(origins, destinations);
+    }
+    return provider.calculateMatrix(origins, destinations);
+  }
+
+  searchPlaces(options: LocationSearchOptions): Promise<PlaceCandidate[]> {
+    return this.placesProvider.searchPlaces(options);
+  }
+
+  getPlaceDetails(placeId: string): Promise<PlaceCandidate | null> {
+    return this.placesProvider.getPlaceDetails(placeId);
   }
 
   checkRouteDeviation(

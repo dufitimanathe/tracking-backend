@@ -63,6 +63,21 @@ export class TransportRequestResponseDto {
   @ApiPropertyOptional()
   notes?: string | null;
 
+  @ApiPropertyOptional()
+  pickupPlaceId?: string | null;
+
+  @ApiPropertyOptional()
+  destinationPlaceId?: string | null;
+
+  @ApiPropertyOptional()
+  pickupDisplayName?: string | null;
+
+  @ApiPropertyOptional()
+  destinationDisplayName?: string | null;
+
+  @ApiProperty()
+  aiAssisted!: boolean;
+
   static fromEntity(
     entity: TransportRequest,
     extras?: {
@@ -92,6 +107,11 @@ export class TransportRequestResponseDto {
       estimatedDurationMinutes: entity.estimatedDurationMinutes,
       estimatedPrice: entity.estimatedPrice,
       notes: entity.notes,
+      pickupPlaceId: entity.pickupPlaceId ?? null,
+      destinationPlaceId: entity.destinationPlaceId ?? null,
+      pickupDisplayName: entity.pickupDisplayName ?? null,
+      destinationDisplayName: entity.destinationDisplayName ?? null,
+      aiAssisted: entity.aiAssisted ?? false,
     };
   }
 }

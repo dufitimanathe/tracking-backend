@@ -103,6 +103,7 @@ export class GoogleRoutingProvider implements RoutingProvider {
         params: {
           origins: origins.map((o) => `${o.lat},${o.lng}`).join('|'),
           destinations: destinations.map((d) => `${d.lat},${d.lng}`).join('|'),
+          mode: 'driving',
           key: this.apiKey,
         },
       });
@@ -131,6 +132,13 @@ export class GoogleRoutingProvider implements RoutingProvider {
       this.logger.warn(`Google matrix failed, using fallback: ${String(error)}`);
       return this.fallback.calculateMatrix(origins, destinations);
     }
+  }
+
+  computeRouteMatrix(
+    origins: GeoCoordinate[],
+    destinations: GeoCoordinate[],
+  ): Promise<MatrixResult> {
+    return this.calculateMatrix(origins, destinations);
   }
 
   /** Preferred: Routes API v2 (enable "Routes API" in Google Cloud Console). */

@@ -5,6 +5,7 @@ import { DispatchModule } from '../dispatch/dispatch.module';
 import { TransportRequest } from '../transport-requests/entities/transport-request.entity';
 import { TripEventsModule } from '../trip-events/trip-events.module';
 import { Trip } from '../trips/entities/trip.entity';
+import { WhatsappModule } from '../whatsapp/whatsapp.module';
 import { ApprovalsController } from './approvals.controller';
 import { ApprovalsService } from './approvals.service';
 import { TransportRequestApproval } from './entities/transport-request-approval.entity';
@@ -15,6 +16,7 @@ import { TransportRequestApproval } from './entities/transport-request-approval.
     AuthGuardsModule,
     TripEventsModule,
     forwardRef(() => DispatchModule),
+    forwardRef(() => WhatsappModule),
   ],
   controllers: [ApprovalsController],
   providers: [ApprovalsService],

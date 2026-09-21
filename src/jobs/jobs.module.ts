@@ -3,6 +3,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { DispatchModule } from '../dispatch/dispatch.module';
 import { IncidentsModule } from '../incidents/incidents.module';
+import { RealtimeModule } from '../realtime/realtime.module';
 import { TrackingModule } from '../tracking/tracking.module';
 import { TrackingSession } from '../tracking/entities/tracking-session.entity';
 import { ALL_QUEUES } from './jobs.constants';
@@ -13,7 +14,6 @@ import {
   IncidentDetectionProcessor,
   InvoicesProcessor,
   NotificationsProcessor,
-  WhatsappProcessor,
 } from './processors/stub.processor';
 
 @Module({
@@ -23,6 +23,7 @@ import {
     IncidentsModule,
     DispatchModule,
     TrackingModule,
+    RealtimeModule,
   ],
   providers: [
     JobsScheduler,
@@ -31,7 +32,6 @@ import {
     NotificationsProcessor,
     IncidentDetectionProcessor,
     InvoicesProcessor,
-    WhatsappProcessor,
   ],
   exports: [BullModule],
 })

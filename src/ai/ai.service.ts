@@ -36,9 +36,12 @@ export class AiService {
     context?: { locale?: string },
   ): Promise<ParsedTransportRequestDto> {
     const parsed = await this.getParser().parse(message, context);
-    const errors = validateSync(parsed, { whitelist: true });
+    const errors = validateSync(parsed, {
+      whitelist: true,
+      skipMissingProperties: true,
+    });
     if (errors.length > 0) {
-      return { ...parsed, confidence: Math.min(parsed.confidence, 0.3) };
+      return { ...parsed, confidence: Math.min(parsed.confidence, 0.3), needsClarification: true };
     }
     return parsed;
   }

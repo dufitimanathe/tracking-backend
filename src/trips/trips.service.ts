@@ -27,6 +27,7 @@ import { Rider } from '../riders/entities/rider.entity';
 import { TransportRequest } from '../transport-requests/entities/transport-request.entity';
 import { TripEventsService } from '../trip-events/trip-events.service';
 import { User } from '../users/entities/user.entity';
+import { WhatsAppStatusNotifierService } from '../whatsapp/whatsapp-status-notifier.service';
 import { AssignTripDto } from './dto/assign-trip.dto';
 import { CancelTripDto } from './dto/cancel-trip.dto';
 import { TripQueryDto } from './dto/trip-query.dto';
@@ -64,6 +65,7 @@ export class TripsService {
     private readonly dispatchService: DispatchService,
     private readonly billingService: BillingService,
     private readonly notificationsService: NotificationsService,
+    private readonly whatsappStatusNotifier: WhatsAppStatusNotifierService,
   ) {}
 
   async findAll(
@@ -204,6 +206,7 @@ export class TripsService {
     });
 
     await this.notifyRiderTripUpdate(trip, 'Trip accepted');
+    await this.notifyEmployeeWhatsApp(trip, 'Rider accepted your trip and is heading to pickup');
     return TripResponseDto.fromEntity(trip);
   }
 
@@ -303,6 +306,7 @@ export class TripsService {
       return lockedTrip;
     });
 
+    await this.notifyEmployeeWhatsApp(trip, 'Rider has arrived at pickup');
     return TripResponseDto.fromEntity(trip);
   }
 
@@ -345,6 +349,7 @@ export class TripsService {
       return lockedTrip;
     });
 
+    await this.notifyEmployeeWhatsApp(trip, 'Your trip has started');
     return TripResponseDto.fromEntity(trip);
   }
 
@@ -415,6 +420,7 @@ export class TripsService {
 
     await this.billingService.createForCompletedTrip(trip.id);
     await this.notifyRiderTripUpdate(trip, 'Trip completed', NotificationType.TRIP_COMPLETED);
+    await this.notifyEmployeeWhatsApp(trip, 'Trip completed. Thank you!');
 
     return TripResponseDto.fromEntity(trip);
   }
@@ -433,6 +439,7 @@ export class TripsService {
       dto.reason,
       actor.id,
     );
+    await this.notifyEmployeeWhatsApp(trip, 'A rider was assigned to your trip');
     return TripResponseDto.fromEntity(trip);
   }
 
@@ -513,6 +520,10 @@ export class TripsService {
       return lockedTrip;
     });
 
+    await this.notifyEmployeeWhatsApp(
+      trip,
+      `Trip cancelled${dto.reason ? `: ${dto.reason}` : ''}`,
+    );
     return TripResponseDto.fromEntity(trip);
   }
 
@@ -637,5 +648,16 @@ export class TripsService {
       relatedEntityType: 'trip',
       relatedEntityId: trip.id,
     });
+  }
+
+  private async notifyEmployeeWhatsApp(trip: Trip, statusLabel: string): Promise<void> {
+    if (!trip.transportRequestId) {
+      return;
+    }
+    await this.whatsappStatusNotifier.notifyRequestStatus(
+      trip.companyId,
+      trip.transportRequestId,
+      statusLabel,
+    );
   }
 }

@@ -1,14 +1,18 @@
 import { createHmac, timingSafeEqual } from 'crypto';
+import { InjectQueue } from '@nestjs/bullmq';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import axios from 'axios';
+import { Queue } from 'bullmq';
 import { Repository } from 'typeorm';
-import { EmployeeStatus } from '../common/enums';
-import { AiService } from '../ai/ai.service';
-import { Employee } from '../employees/entities/employee.entity';
-import { TransportRequestsService } from '../transport-requests/transport-requests.service';
-import { WhatsAppMessage, WhatsAppMessageDirection } from './entities/whatsapp-message.entity';
+import { QUEUE_WHATSAPP } from '../jobs/jobs.constants';
+import { WhatsAppMessageDirection, WhatsAppProcessingStatus } from '../common/enums';
+import { WhatsAppMessage } from './entities/whatsapp-message.entity';
+import { InboundWhatsAppJobPayload } from './whatsapp-orchestration.service';
+import { normalizePhone } from './utils/phone.util';
+import { IntegrationEvent } from '../integrations/entities/integration-event.entity';
+
+export const WHATSAPP_PROCESS_INBOUND_JOB = 'process-inbound';
 
 @Injectable()
 export class WhatsappService {
@@ -17,11 +21,11 @@ export class WhatsappService {
   constructor(
     @InjectRepository(WhatsAppMessage)
     private readonly whatsAppMessageRepository: Repository<WhatsAppMessage>,
-    @InjectRepository(Employee)
-    private readonly employeeRepository: Repository<Employee>,
+    @InjectRepository(IntegrationEvent)
+    private readonly integrationEventRepository: Repository<IntegrationEvent>,
     private readonly configService: ConfigService,
-    private readonly aiService: AiService,
-    private readonly transportRequestsService: TransportRequestsService,
+    @InjectQueue(QUEUE_WHATSAPP)
+    private readonly whatsappQueue: Queue,
   ) {}
 
   verifyWebhook(mode: string, token: string, challenge: string): string | null {
@@ -60,7 +64,10 @@ export class WhatsappService {
     }
   }
 
-  async processInboundWebhook(payload: Record<string, unknown>): Promise<void> {
+  /**
+   * Ack webhook quickly: persist idempotent inbound rows and enqueue processing.
+   */
+  async enqueueInboundWebhook(payload: Record<string, unknown>): Promise<void> {
     const entries = (payload.entry as Array<Record<string, unknown>>) ?? [];
 
     for (const entry of entries) {
@@ -70,40 +77,22 @@ export class WhatsappService {
         const messages = (value.messages as Array<Record<string, unknown>>) ?? [];
 
         for (const message of messages) {
-          await this.processInboundMessage(message, value);
+          await this.enqueueInboundMessage(message, value);
         }
       }
     }
-  }
 
-  async sendMessage(phone: string, text: string): Promise<void> {
-    const accessToken = this.configService.get<string>(
-      'app.integrations.whatsappAccessToken',
-      { infer: true },
-    );
-    const phoneNumberId = this.configService.get<string>(
-      'app.integrations.whatsappPhoneNumberId',
-      { infer: true },
-    );
-
-    if (!accessToken || !phoneNumberId) {
-      this.logger.log(`WhatsApp stub outbound to ${phone}: ${text}`);
-      return;
-    }
-
-    await axios.post(
-      `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`,
-      {
-        messaging_product: 'whatsapp',
-        to: phone.replace(/\D/g, ''),
-        type: 'text',
-        text: { body: text },
-      },
-      { headers: { Authorization: `Bearer ${accessToken}` } },
+    await this.integrationEventRepository.save(
+      this.integrationEventRepository.create({
+        provider: 'whatsapp',
+        eventType: 'webhook_received',
+        success: true,
+        message: 'Webhook accepted',
+      }),
     );
   }
 
-  private async processInboundMessage(
+  private async enqueueInboundMessage(
     message: Record<string, unknown>,
     value: Record<string, unknown>,
   ): Promise<void> {
@@ -116,80 +105,86 @@ export class WhatsappService {
       where: { externalMessageId },
     });
     if (existing) {
+      existing.processingStatus = WhatsAppProcessingStatus.DUPLICATE;
+      await this.whatsAppMessageRepository.save(existing);
       return;
     }
 
-    const phone = String(
-      (message.from as string) ??
-        ((value.contacts as Array<{ wa_id?: string }>)?.[0]?.wa_id ?? ''),
+    const phone = normalizePhone(
+      String(
+        (message.from as string) ??
+          ((value.contacts as Array<{ wa_id?: string }>)?.[0]?.wa_id ?? ''),
+      ),
     );
-    const textBody =
-      ((message.text as { body?: string })?.body ??
-        (message.body as string) ??
-        '') as string;
 
-    const employee = await this.employeeRepository.findOne({
-      where: { phone, status: EmployeeStatus.ACTIVE },
-    });
+    const messageType = String(message.type ?? 'text');
+    let textBody: string | undefined;
+    let latitude: number | undefined;
+    let longitude: number | undefined;
+    let buttonId: string | undefined;
+    let buttonTitle: string | undefined;
 
-    const savedMessage = await this.whatsAppMessageRepository.save(
+    if (messageType === 'text') {
+      textBody = (message.text as { body?: string })?.body;
+    } else if (messageType === 'location') {
+      const loc = message.location as { latitude?: number; longitude?: number };
+      latitude = loc?.latitude;
+      longitude = loc?.longitude;
+      textBody = 'shared_location';
+    } else if (messageType === 'interactive') {
+      const interactive = message.interactive as {
+        type?: string;
+        button_reply?: { id?: string; title?: string };
+        list_reply?: { id?: string; title?: string };
+      };
+      buttonId = interactive?.button_reply?.id ?? interactive?.list_reply?.id;
+      buttonTitle = interactive?.button_reply?.title ?? interactive?.list_reply?.title;
+      textBody = buttonTitle;
+    } else if (messageType === 'button') {
+      const button = message.button as { payload?: string; text?: string };
+      buttonId = button?.payload;
+      buttonTitle = button?.text;
+      textBody = buttonTitle;
+    }
+
+    await this.whatsAppMessageRepository.save(
       this.whatsAppMessageRepository.create({
         externalMessageId,
-        companyId: employee?.companyId ?? null,
-        employeeId: employee?.id ?? null,
         phone,
         direction: WhatsAppMessageDirection.INBOUND,
+        messageType,
+        messageBody: textBody ?? null,
+        processingStatus: WhatsAppProcessingStatus.QUEUED,
         payload: message,
       }),
     );
 
-    if (!employee) {
-      await this.sendMessage(
-        phone,
-        'Sorry, your phone number is not registered with any company transport account.',
-      );
-      savedMessage.processedAt = new Date();
-      await this.whatsAppMessageRepository.save(savedMessage);
-      return;
-    }
-
-    const parsed = await this.aiService.parseTransportMessage(textBody);
-    const threshold = this.aiService.getConfidenceThreshold();
-
-    if (parsed.confidence < threshold) {
-      await this.sendMessage(
-        phone,
-        'Could you clarify your pickup and destination? Example: From Kimironko to Kacyiru',
-      );
-      savedMessage.conversationState = { awaitingClarification: true, parsed };
-      savedMessage.processedAt = new Date();
-      await this.whatsAppMessageRepository.save(savedMessage);
-      return;
-    }
-
-    const request = await this.transportRequestsService.createFromWhatsApp(
-      employee.companyId,
-      employee.id,
-      {
-        pickupAddress: parsed.pickupAddress,
-        pickupLatitude: parsed.pickupLatitude ?? -1.9441,
-        pickupLongitude: parsed.pickupLongitude ?? 30.0619,
-        destinationAddress: parsed.destinationAddress,
-        destinationLatitude: parsed.destinationLatitude ?? -1.9441,
-        destinationLongitude: parsed.destinationLongitude ?? 30.0619,
-        requestedPickupTime: parsed.requestedPickupTime,
-        notes: parsed.notes,
-      },
-      true,
-    );
-
-    await this.sendMessage(
+    const jobPayload: InboundWhatsAppJobPayload = {
+      externalMessageId,
       phone,
-      `Transport request received: ${parsed.pickupAddress} → ${parsed.destinationAddress}. Reply YES to confirm.`,
-    );
+      messageType,
+      textBody,
+      latitude,
+      longitude,
+      buttonId,
+      buttonTitle,
+      rawMessage: message,
+      value,
+    };
 
-    savedMessage.conversationState = { requestId: request.id };
-    savedMessage.processedAt = new Date();
-    await this.whatsAppMessageRepository.save(savedMessage);
+    await this.whatsappQueue.add(WHATSAPP_PROCESS_INBOUND_JOB, jobPayload, {
+      jobId: externalMessageId,
+      removeOnComplete: 1000,
+      removeOnFail: 500,
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 2000 },
+    });
+
+    this.logger.debug(`Enqueued WhatsApp inbound ${externalMessageId}`);
+  }
+
+  /** @deprecated Prefer enqueueInboundWebhook — kept for tests */
+  async processInboundWebhook(payload: Record<string, unknown>): Promise<void> {
+    await this.enqueueInboundWebhook(payload);
   }
 }

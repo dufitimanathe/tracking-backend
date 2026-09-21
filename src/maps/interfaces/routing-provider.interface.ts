@@ -36,4 +36,9 @@ export interface RoutingProvider {
     origins: GeoCoordinate[],
     destinations: GeoCoordinate[],
   ): Promise<MatrixResult>;
+  /** Alias used by dispatch ranking — same as calculateMatrix. */
+  computeRouteMatrix?(
+    origins: GeoCoordinate[],
+    destinations: GeoCoordinate[],
+  ): Promise<MatrixResult>;
 }

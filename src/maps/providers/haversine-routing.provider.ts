@@ -68,4 +68,11 @@ export class HaversineRoutingProvider implements RoutingProvider {
 
     return { origins, destinations, distancesMeters, durationsSeconds };
   }
+
+  computeRouteMatrix(
+    origins: GeoCoordinate[],
+    destinations: GeoCoordinate[],
+  ): Promise<MatrixResult> {
+    return this.calculateMatrix(origins, destinations);
+  }
 }

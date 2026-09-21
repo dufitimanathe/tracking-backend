@@ -30,13 +30,16 @@ export default registerAs('app', () => ({
     password: process.env.REDIS_PASSWORD || undefined,
   },
   integrations: {
-    /** Server-side Google Maps key (Geocoding / Routes / Distance Matrix). Leave empty until you paste from Google Cloud Console. */
+    /** Server-side Google Maps key (Geocoding / Places / Routes / Distance Matrix). */
     googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || '',
     whatsappAccessToken: process.env.WHATSAPP_ACCESS_TOKEN || '',
     whatsappVerifyToken: process.env.WHATSAPP_VERIFY_TOKEN || '',
     whatsappPhoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || '',
+    whatsappBusinessAccountId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || '',
     whatsappAppSecret: process.env.WHATSAPP_APP_SECRET || '',
+    whatsappApiVersion: process.env.WHATSAPP_API_VERSION || 'v21.0',
     openaiApiKey: process.env.OPENAI_API_KEY || '',
+    openaiTransportModel: process.env.OPENAI_TRANSPORT_MODEL || 'gpt-4o',
     geminiApiKey: process.env.GEMINI_API_KEY || '',
     aiProvider: process.env.AI_PROVIDER || 'mock',
     aiConfidenceThreshold: parseFloat(process.env.AI_CONFIDENCE_THRESHOLD ?? '0.75'),
@@ -88,6 +91,12 @@ export default registerAs('app', () => ({
       10,
     ),
     riderSearchRadiusMeters: parseInt(process.env.RIDER_SEARCH_RADIUS_METERS ?? '10000', 10),
+    riderLocationMaxAgeSeconds: parseInt(
+      process.env.RIDER_LOCATION_MAX_AGE_SECONDS ?? '60',
+      10,
+    ),
+    assignmentCandidateLimit: parseInt(process.env.ASSIGNMENT_CANDIDATE_LIMIT ?? '10', 10),
+    assignmentMatrixFallback: (process.env.ASSIGNMENT_MATRIX_FALLBACK ?? 'true') === 'true',
   },
   throttle: {
     ttl: parseInt(process.env.THROTTLE_TTL_MS ?? '60000', 10),

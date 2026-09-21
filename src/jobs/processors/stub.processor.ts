@@ -28,12 +28,3 @@ export class InvoicesProcessor extends WorkerHost {
     this.logger.debug(`Invoices stub job ${job.name} received`);
   }
 }
-
-@Processor({ name: 'whatsapp' })
-export class WhatsappProcessor extends WorkerHost {
-  private readonly logger = new Logger(WhatsappProcessor.name);
-
-  async process(job: Job): Promise<void> {
-    this.logger.debug(`WhatsApp stub job ${job.name} received`);
-  }
-}

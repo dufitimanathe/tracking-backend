@@ -1,10 +1,12 @@
 import { Column, Entity } from 'typeorm';
 import { BaseEntity } from '../../common/entities/base.entity';
+import {
+  WhatsAppMessageDirection,
+  WhatsAppProcessingStatus,
+} from '../../common/enums';
 
-export enum WhatsAppMessageDirection {
-  INBOUND = 'INBOUND',
-  OUTBOUND = 'OUTBOUND',
-}
+// Re-export direction from enums for callers that imported from entity
+export { WhatsAppMessageDirection } from '../../common/enums';
 
 @Entity('whatsapp_messages')
 export class WhatsAppMessage extends BaseEntity {
@@ -25,6 +27,25 @@ export class WhatsAppMessage extends BaseEntity {
     enum: WhatsAppMessageDirection,
   })
   direction!: WhatsAppMessageDirection;
+
+  @Column({ type: 'varchar', length: 40, nullable: true })
+  messageType?: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  messageBody?: string | null;
+
+  @Column({ type: 'varchar', length: 10, nullable: true })
+  language?: string | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  requestId?: string | null;
+
+  @Column({
+    type: 'enum',
+    enum: WhatsAppProcessingStatus,
+    default: WhatsAppProcessingStatus.RECEIVED,
+  })
+  processingStatus!: WhatsAppProcessingStatus;
 
   @Column({ type: 'jsonb' })
   payload!: Record<string, unknown>;

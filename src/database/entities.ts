@@ -23,6 +23,10 @@ import { Trip } from '../trips/entities/trip.entity';
 import { User } from '../users/entities/user.entity';
 import { AuditLog } from '../audit/entities/audit-log.entity';
 import { WhatsAppMessage } from '../whatsapp/entities/whatsapp-message.entity';
+import { WhatsAppConversation } from '../whatsapp/entities/whatsapp-conversation.entity';
+import { TransportRequestParsing } from '../whatsapp/entities/transport-request-parsing.entity';
+import { AssignmentAttempt } from '../dispatch/entities/assignment-attempt.entity';
+import { IntegrationEvent } from '../integrations/entities/integration-event.entity';
 import { TrackingSession } from '../tracking/entities/tracking-session.entity';
 import { DriverStop } from '../tracking/entities/driver-stop.entity';
 import { Geofence } from '../tracking/entities/geofence.entity';
@@ -60,4 +64,8 @@ export const entities = [
   Notification,
   AuditLog,
   WhatsAppMessage,
+  WhatsAppConversation,
+  TransportRequestParsing,
+  AssignmentAttempt,
+  IntegrationEvent,
 ];

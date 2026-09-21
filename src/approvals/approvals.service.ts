@@ -14,6 +14,7 @@ import { DispatchService } from '../dispatch/dispatch.service';
 import { TransportRequest } from '../transport-requests/entities/transport-request.entity';
 import { TripEventsService } from '../trip-events/trip-events.service';
 import { Trip } from '../trips/entities/trip.entity';
+import { WhatsAppStatusNotifierService } from '../whatsapp/whatsapp-status-notifier.service';
 import { ApproveTransportRequestDto } from './dto/approve-transport-request.dto';
 import { ApprovalResponseDto } from './dto/approval-response.dto';
 import { RejectTransportRequestDto } from './dto/reject-transport-request.dto';
@@ -33,6 +34,7 @@ export class ApprovalsService {
     private readonly dataSource: DataSource,
     private readonly tripEventsService: TripEventsService,
     private readonly dispatchService: DispatchService,
+    private readonly whatsappStatusNotifier: WhatsAppStatusNotifierService,
   ) {}
 
   async approve(
@@ -125,6 +127,12 @@ export class ApprovalsService {
 
     await this.dispatchService.startAutomaticDispatch(tripId);
 
+    await this.whatsappStatusNotifier.notifyRequestStatus(
+      companyId,
+      requestId,
+      'Approved — searching for a rider',
+    );
+
     const approval = await this.approvalRepository.findOne({
       where: { requestId, companyId, action: ApprovalAction.APPROVED },
       order: { createdAt: 'DESC' },
@@ -178,6 +186,12 @@ export class ApprovalsService {
 
       return savedApproval;
     });
+
+    await this.whatsappStatusNotifier.notifyRequestStatus(
+      companyId,
+      requestId,
+      `Rejected${dto.notes ? `: ${dto.notes}` : ''}`,
+    );
 
     return {
       approval: ApprovalResponseDto.fromEntity(approval),

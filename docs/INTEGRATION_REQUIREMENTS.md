@@ -6,11 +6,12 @@ Use this checklist when you are ready to enable each integration.
 
 ---
 
-## 1. Google Maps Platform (Maps JS / Routes / Geocoding)
+## 1. Google Maps Platform (Maps JS / Routes / Geocoding / Places)
 
-**Why:** road distance, ETA, polylines, admin live map tiles, and (later) mobile off-route checks. GPS pings themselves never call Google.
+**Why:** road distance, ETA, polylines, admin live map tiles, **Places validation for WhatsApp addresses**, and mobile off-route checks. GPS pings themselves never call Google.
 
-**Full checklist:** [`GOOGLE_MAPS_SETUP.md`](./GOOGLE_MAPS_SETUP.md)
+**Full checklist:** [`GOOGLE_MAPS_SETUP.md`](./GOOGLE_MAPS_SETUP.md)  
+**WhatsApp dispatch:** [`WHATSAPP_AI_DISPATCH.md`](./WHATSAPP_AI_DISPATCH.md)
 
 ### What to create
 
@@ -18,11 +19,12 @@ Use this checklist when you are ready to enable each integration.
 2. Enable APIs:
    - **Maps JavaScript API** (web map UI)
    - **Geocoding API**
+   - **Places API (New)** — Text Search + Place Details for WhatsApp address resolution
    - **Routes API** (preferred for distance/ETA/polyline)
-   - **Distance Matrix API** (optional matrix ranking)
-   - Optionally **Directions API** (backend fallback) and **Places API** later
+   - **Distance Matrix API** (dispatch candidate re-ranking)
+   - Optionally **Directions API** (backend fallback)
 3. Create **two** API keys:
-   - Server key → IP-restricted → `GOOGLE_MAPS_API_KEY` (backend)
+   - Server key → IP-restricted → `GOOGLE_MAPS_API_KEY` (backend: Places + Routes + Geocoding)
    - Browser key → HTTP-referrer-restricted → `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` (frontend)
 4. Leave keys empty in env until you paste them — the app runs with Haversine + CSS map fallback
 
@@ -70,6 +72,7 @@ NEXT_PUBLIC_WS_URL=http://localhost:3000/realtime
 7. Configure webhook callback URL (public HTTPS):
    - Verify: `GET https://YOUR_API_HOST/api/v1/integrations/whatsapp/webhook`
    - Receive: `POST` same URL
+   - Alias also supported: `/api/v1/webhooks/whatsapp/webhook`
 8. Subscribe to webhook fields: **messages** (and optionally `message_status`)
 9. For production outbound templates (outside 24h session window): create and submit **message templates** for approval
 
@@ -78,16 +81,22 @@ NEXT_PUBLIC_WS_URL=http://localhost:3000/realtime
 ```env
 WHATSAPP_ACCESS_TOKEN=
 WHATSAPP_PHONE_NUMBER_ID=
+WHATSAPP_BUSINESS_ACCOUNT_ID=
 WHATSAPP_VERIFY_TOKEN=choose-a-long-random-string
 WHATSAPP_APP_SECRET=
+WHATSAPP_API_VERSION=v21.0
 ```
 
 ### Backend already supports
 
-- Webhook verification challenge
-- Optional HMAC signature validation when `WHATSAPP_APP_SECRET` is set
+- Webhook verification challenge + optional HMAC
+- Immediate ack + Bull `whatsapp/process-inbound` queue
 - Idempotency via `whatsapp_messages.externalMessageId`
-- Domain flow through `TransportRequestsService` (not raw SQL in webhook)
+- Conversation state machine + Places clarification
+- Confirm → `confirmRequest` → supervisor approval → dispatch
+- Employee status WhatsApp notifications for `channel=WHATSAPP`
+
+**Runbook:** [`WHATSAPP_AI_DISPATCH.md`](./WHATSAPP_AI_DISPATCH.md)
 
 ### Important Meta requirements
 
@@ -119,6 +128,7 @@ WHATSAPP_APP_SECRET=
 ```env
 AI_PROVIDER=openai
 OPENAI_API_KEY=sk-...
+OPENAI_TRANSPORT_MODEL=gpt-4o
 AI_CONFIDENCE_THRESHOLD=0.75
 ```
 
