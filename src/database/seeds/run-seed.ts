@@ -1,32 +1,14 @@
 import { config as loadEnv } from 'dotenv';
 import * as argon2 from 'argon2';
 import { DataSource } from 'typeorm';
-import {
-  EmployeeStatus,
-  MembershipStatus,
-  MotorcycleStatus,
-  MotorcycleTrackingStatus,
-  RiderAvailabilityStatus,
-  RiderStatus,
-  UserRole,
-  UserStatus,
-} from '../../common/enums';
-import { toPointWkt } from '../../common/utils/geo.util';
+import { MembershipStatus, UserRole, UserStatus } from '../../common/enums';
 import { entities } from '../entities';
 
 loadEnv();
 
-const ADMIN_EMAIL = 'theodufi.rw@gmail.com';
-const ADMIN_PASSWORD = 'Password123!';
+const ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL ?? 'theodufi.rw@gmail.com';
+const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? 'Password123!';
 const COMPANY_SLUG = 'virunga-transport-ltd';
-
-const KIGALI_LOCATIONS = {
-  kimironko: { lat: -1.9595, lng: 30.1228, label: 'Kimironko Market' },
-  kacyiru: { lat: -1.9369, lng: 30.0827, label: 'Kacyiru' },
-  remera: { lat: -1.9495, lng: 30.1115, label: 'Remera' },
-  nyabugogo: { lat: -1.9392, lng: 30.0444, label: 'Nyabugogo' },
-  kigaliHeights: { lat: -1.9506, lng: 30.0912, label: 'Kigali Heights' },
-};
 
 async function ensureAdmin(
   manager: {
@@ -101,165 +83,70 @@ async function runSeed(): Promise<void> {
       `SELECT to_regclass('public.users') AS users, to_regclass('public.companies') AS companies`,
     );
     if (!tables[0]?.users || !tables[0]?.companies) {
-      throw new Error(
-        'Schema missing (users/companies). Run migrations before seeding.',
-      );
-    }
-
-    const existingCompany = await dataSource.query(
-      `SELECT id FROM companies WHERE slug = $1 LIMIT 1`,
-      [COMPANY_SLUG],
-    );
-
-    if (existingCompany.length > 0) {
-      const companyId = existingCompany[0].id as string;
-      await dataSource.transaction(async (manager) => {
-        await ensureAdmin(manager, passwordHash, companyId);
-      });
-      console.log('Seed refresh: company already exists; admin ensured.');
-      console.log(`Admin login: ${ADMIN_EMAIL} / ${ADMIN_PASSWORD}`);
-      return;
+      throw new Error('Schema missing (users/companies). Run migrations before seeding.');
     }
 
     await dataSource.transaction(async (manager) => {
-      const company = await manager.query(
-        `INSERT INTO companies (name, slug, email, phone, address, timezone, currency)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-        [
-          'Virunga Transport Ltd',
-          COMPANY_SLUG,
-          'info@virunga.rw',
-          '+250788200000',
-          'KG 9 Ave, Kacyiru, Kigali',
-          'Africa/Kigali',
-          'RWF',
-        ],
+      let companyId: string;
+      const existingCompany = await manager.query(
+        `SELECT id FROM companies WHERE slug = $1 LIMIT 1`,
+        [COMPANY_SLUG],
       );
-      const companyId = company[0].id as string;
+
+      if (existingCompany.length > 0) {
+        companyId = existingCompany[0].id as string;
+      } else {
+        const company = await manager.query(
+          `INSERT INTO companies (name, slug, email, phone, address, timezone, currency)
+           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+          [
+            'Virunga Transport Ltd',
+            COMPANY_SLUG,
+            'info@virunga.rw',
+            '+250788200000',
+            'KG 9 Ave, Kacyiru, Kigali',
+            'Africa/Kigali',
+            'RWF',
+          ],
+        );
+        companyId = company[0].id as string;
+      }
 
       await ensureAdmin(manager, passwordHash, companyId);
 
-      await manager.query(
-        `INSERT INTO company_onboarding ("companyId", "companyProfileCompleted", "operationalSettingsCompleted", "fleetAdded", "teamAdded", "completedAt")
-         VALUES ($1, true, true, true, true, now())`,
+      const onboarding = await manager.query(
+        `SELECT id FROM company_onboarding WHERE "companyId" = $1 LIMIT 1`,
         [companyId],
       );
+      if (onboarding.length === 0) {
+        await manager.query(
+          `INSERT INTO company_onboarding ("companyId", "companyProfileCompleted", "operationalSettingsCompleted", "fleetAdded", "teamAdded", "completedAt")
+           VALUES ($1, true, true, false, false, now())`,
+          [companyId],
+        );
+      }
 
-      await manager.query(
-        `INSERT INTO pricing_rules ("companyId", "firstKilometerPrice", "additionalKilometerPrice", currency, "effectiveFrom", active)
-         VALUES ($1, '500', '400', 'RWF', now(), true)`,
+      const pricing = await manager.query(
+        `SELECT id FROM pricing_rules WHERE "companyId" = $1 AND active = true LIMIT 1`,
         [companyId],
       );
-
-      const employees = [
-        { name: 'Claudine Uwase', phone: '+250788300001', dept: 'Finance' },
-        { name: 'Emmanuel Habimana', phone: '+250788300002', dept: 'Operations' },
-        { name: 'Grace Ingabire', phone: '+250788300003', dept: 'HR' },
-        { name: 'Patrick Nshimiyimana', phone: '+250788300004', dept: 'Logistics' },
-      ];
-
-      for (const employee of employees) {
+      if (pricing.length === 0) {
         await manager.query(
-          `INSERT INTO employees ("companyId", "fullName", phone, department, "canRequestTransport", status)
-           VALUES ($1, $2, $3, $4, true, $5)`,
-          [companyId, employee.name, employee.phone, employee.dept, EmployeeStatus.ACTIVE],
+          `INSERT INTO pricing_rules ("companyId", "firstKilometerPrice", "additionalKilometerPrice", currency, "effectiveFrom", active)
+           VALUES ($1, '500', '400', 'RWF', now(), true)`,
+          [companyId],
         );
       }
-
-      const riderProfiles = [
-        { firstName: 'Eric', lastName: 'Nzayisenga', phone: '+250788400001' },
-        { firstName: 'Alice', lastName: 'Mutesi', phone: '+250788400002' },
-        { firstName: 'Fabrice', lastName: 'Habyarimana', phone: '+250788400003' },
-      ];
-
-      const riderIds: string[] = [];
-      for (const rider of riderProfiles) {
-        const user = await manager.query(
-          `INSERT INTO users ("firstName", "lastName", phone, "passwordHash", status)
-           VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-          [rider.firstName, rider.lastName, rider.phone, passwordHash, UserStatus.ACTIVE],
-        );
-        const userId = user[0].id as string;
-
-        await manager.query(
-          `INSERT INTO company_members ("userId", "companyId", role, status, "joinedAt")
-           VALUES ($1, $2, $3, $4, now())`,
-          [userId, companyId, UserRole.RIDER, MembershipStatus.ACTIVE],
-        );
-
-        const riderRow = await manager.query(
-          `INSERT INTO riders ("companyId", "userId", phone, status, "availabilityStatus")
-           VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-          [
-            companyId,
-            userId,
-            rider.phone,
-            RiderStatus.ACTIVE,
-            RiderAvailabilityStatus.OFFLINE,
-          ],
-        );
-        riderIds.push(riderRow[0].id as string);
-      }
-
-      const plates = ['RAE 428C', 'RAD 103B', 'RAG 551D'];
-      const motorcycleIds: string[] = [];
-      for (let i = 0; i < plates.length; i += 1) {
-        const moto = await manager.query(
-          `INSERT INTO motorcycles ("companyId", "plateNumber", "internalCode", brand, model, year, color, status, "trackingStatus")
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
-          [
-            companyId,
-            plates[i],
-            `VT-0${i + 1}`,
-            'TVS',
-            'Apache 160',
-            2023,
-            'Black',
-            MotorcycleStatus.ACTIVE,
-            MotorcycleTrackingStatus.OFFLINE,
-          ],
-        );
-        motorcycleIds.push(moto[0].id as string);
-      }
-
-      for (let i = 0; i < riderIds.length; i += 1) {
-        await manager.query(
-          `INSERT INTO rider_motorcycle_assignments ("companyId", "riderId", "motorcycleId", "assignedById", "assignedAt", active)
-           VALUES ($1, $2, $3, (SELECT id FROM users WHERE email = $4 LIMIT 1), now(), true)`,
-          [companyId, riderIds[i], motorcycleIds[i], ADMIN_EMAIL],
-        );
-      }
-
-      const locs = [
-        KIGALI_LOCATIONS.kimironko,
-        KIGALI_LOCATIONS.kacyiru,
-        KIGALI_LOCATIONS.remera,
-      ];
-
-      for (let i = 0; i < motorcycleIds.length; i += 1) {
-        const loc = locs[i];
-        await manager.query(
-          `INSERT INTO motorcycle_current_locations ("motorcycleId", "companyId", position, latitude, longitude, source, "recordedAt")
-           VALUES ($1, $2, ST_GeogFromText($3), $4, $5, 'RIDER_APP', now())`,
-          [motorcycleIds[i], companyId, toPointWkt(loc), loc.lat, loc.lng],
-        );
-
-        await manager.query(
-          `INSERT INTO gps_devices ("companyId", "motorcycleId", provider, "externalDeviceId", status, "lastSeenAt")
-           VALUES ($1, $2, 'mock', $3, 'ACTIVE', now())`,
-          [companyId, motorcycleIds[i], `MOCK-GPS-${i + 1}`],
-        );
-      }
-
-      console.log('Seed completed: Virunga Transport Ltd with Rwandan staff and Kigali fleet.');
-      console.log(`Admin login: ${ADMIN_EMAIL} / ${ADMIN_PASSWORD}`);
     });
+
+    console.log('Seed completed: company + admin only (no fleet/riders/employees).');
+    console.log(`Admin: ${ADMIN_EMAIL}`);
   } finally {
     await dataSource.destroy();
   }
 }
 
-runSeed().catch((error: unknown) => {
-  console.error('Seed failed:', error);
+runSeed().catch((error) => {
+  console.error(error);
   process.exit(1);
 });

@@ -7,15 +7,24 @@ import {
   Matches,
   MaxLength,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
 import { MembershipStatus, UserRole } from '../../common/enums';
+import { IsRwandaPhone } from '../../common/validators/is-rwanda-phone.decorator';
 
 const MEMBER_ROLES = [
   UserRole.COMPANY_ADMIN,
   UserRole.SUPERVISOR,
+  UserRole.ACCOUNTANT,
   UserRole.RIDER,
   UserRole.EMPLOYEE,
 ] as const;
+
+const EMAIL_REQUIRED_ROLES = new Set<UserRole>([
+  UserRole.COMPANY_ADMIN,
+  UserRole.SUPERVISOR,
+  UserRole.ACCOUNTANT,
+]);
 
 export class CreateMemberDto {
   @ApiProperty({ example: 'John' })
@@ -28,9 +37,9 @@ export class CreateMemberDto {
   @MaxLength(100)
   lastName!: string;
 
-  @ApiPropertyOptional({ example: 'john@example.com' })
-  @IsOptional()
-  @IsEmail()
+  @ApiPropertyOptional({ example: 'john@company.rw' })
+  @ValidateIf((o: CreateMemberDto) => EMAIL_REQUIRED_ROLES.has(o.role) || !!o.email)
+  @IsEmail({}, { message: 'Email must be a valid address.' })
   @MaxLength(255)
   email?: string;
 
@@ -38,6 +47,7 @@ export class CreateMemberDto {
   @IsOptional()
   @IsString()
   @MaxLength(30)
+  @IsRwandaPhone()
   phone?: string;
 
   @ApiProperty({ enum: MEMBER_ROLES })
@@ -50,7 +60,7 @@ export class CreateMemberDto {
   status?: MembershipStatus;
 
   @ApiPropertyOptional({
-    description: 'If omitted, a temporary password is generated for new users.',
+    description: 'Optional. Invitees set their own password on activation.',
   })
   @IsOptional()
   @IsString()

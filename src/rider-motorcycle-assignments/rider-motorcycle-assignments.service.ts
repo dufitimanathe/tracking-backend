@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import { getSkipTake } from '../common/dto/pagination.dto';
@@ -12,8 +12,11 @@ import {
   RiderAvailabilityStatus,
   RiderStatus,
 } from '../common/enums';
+import { Company } from '../companies/entities/company.entity';
+import { MailService } from '../mail/mail.service';
 import { Motorcycle } from '../motorcycles/entities/motorcycle.entity';
 import { Rider } from '../riders/entities/rider.entity';
+import { User } from '../users/entities/user.entity';
 import { AssignRiderMotorcycleDto } from './dto/assign-rider-motorcycle.dto';
 import { AssignmentQueryDto } from './dto/assignment-query.dto';
 import { AssignmentResponseDto } from './dto/assignment-response.dto';
@@ -21,6 +24,8 @@ import { RiderMotorcycleAssignment } from './entities/rider-motorcycle-assignmen
 
 @Injectable()
 export class RiderMotorcycleAssignmentsService {
+  private readonly logger = new Logger(RiderMotorcycleAssignmentsService.name);
+
   private static readonly SORT_FIELDS = new Set([
     'assignedAt',
     'createdAt',
@@ -34,6 +39,11 @@ export class RiderMotorcycleAssignmentsService {
     private readonly riderRepository: Repository<Rider>,
     @InjectRepository(Motorcycle)
     private readonly motorcycleRepository: Repository<Motorcycle>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+    @InjectRepository(Company)
+    private readonly companyRepository: Repository<Company>,
+    private readonly mailService: MailService,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -148,6 +158,15 @@ export class RiderMotorcycleAssignmentsService {
       return created;
     });
 
+    await this.notifyRider(companyId, rider.userId, {
+      subject: 'Motorcycle assigned on FleetOps',
+      headline: 'A motorcycle was assigned to you.',
+      bodyLines: [
+        `Plate: ${motorcycle.plateNumber}.`,
+        'You can now go Online in the FleetOps app so dispatch can track your GPS.',
+      ],
+    });
+
     return AssignmentResponseDto.fromEntity(assignment);
   }
 
@@ -180,12 +199,48 @@ export class RiderMotorcycleAssignmentsService {
       { availabilityStatus: RiderAvailabilityStatus.OFFLINE },
     );
 
+    const rider = await this.riderRepository.findOne({
+      where: { id: assignment.riderId, companyId },
+    });
+    if (rider) {
+      await this.notifyRider(companyId, rider.userId, {
+        subject: 'Motorcycle unassigned on FleetOps',
+        headline: 'Your motorcycle assignment was removed.',
+        bodyLines: [
+          'You were set offline. Ask your admin to assign a motorcycle before going Online again.',
+        ],
+      });
+    }
+
     return AssignmentResponseDto.fromEntity(saved);
   }
 
   async countActiveByCompany(companyId: string): Promise<number> {
     return this.assignmentRepository.count({
       where: { companyId, active: true },
+    });
+  }
+
+  private async notifyRider(
+    companyId: string,
+    userId: string,
+    notice: { subject: string; headline: string; bodyLines: string[] },
+  ): Promise<void> {
+    const [user, company] = await Promise.all([
+      this.userRepository.findOne({ where: { id: userId } }),
+      this.companyRepository.findOne({ where: { id: companyId } }),
+    ]);
+    if (!user?.email) {
+      this.logger.warn(`No email for user ${userId}; skipped assignment notice`);
+      return;
+    }
+    await this.mailService.sendRiderNoticeEmail({
+      to: user.email,
+      firstName: user.firstName || 'Rider',
+      companyName: company?.name ?? 'your company',
+      subject: notice.subject,
+      headline: notice.headline,
+      bodyLines: notice.bodyLines,
     });
   }
 

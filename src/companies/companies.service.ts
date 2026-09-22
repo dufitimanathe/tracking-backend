@@ -5,6 +5,7 @@ import { DataSource, In, Repository } from 'typeorm';
 import { BillingRecord } from '../billing/entities/billing-record.entity';
 import { PricingRule } from '../billing/entities/pricing-rule.entity';
 import { slugify, slugWithSuffix } from '../common/utils/slug.util';
+import { normalizeRwandaPhone } from '../common/utils/rwanda-phone.util';
 import {
   BillingDistanceSource,
   BillingPeriod,
@@ -103,7 +104,7 @@ export class CompaniesService {
           firstName: admin.firstName.trim(),
           lastName: admin.lastName.trim(),
           email: admin.email?.toLowerCase().trim() ?? null,
-          phone: admin.phone?.trim() ?? null,
+          phone: admin.phone ? normalizeRwandaPhone(admin.phone) ?? admin.phone.trim() : null,
           passwordHash,
         });
         const savedUser = await userRepo.save(user);
@@ -115,7 +116,7 @@ export class CompaniesService {
         name: dto.name.trim(),
         slug,
         email: dto.email?.trim() ?? null,
-        phone: dto.phone?.trim() ?? null,
+        phone: dto.phone ? normalizeRwandaPhone(dto.phone) ?? dto.phone.trim() : null,
         address: dto.address?.trim() ?? null,
         registrationNumber: dto.registrationNumber?.trim() ?? null,
         timezone: dto.timezone ?? 'Africa/Kigali',
@@ -184,7 +185,9 @@ export class CompaniesService {
       company.email = dto.email?.trim() ?? null;
     }
     if (dto.phone !== undefined) {
-      company.phone = dto.phone?.trim() ?? null;
+      company.phone = dto.phone
+        ? normalizeRwandaPhone(dto.phone) ?? dto.phone.trim()
+        : null;
     }
     if (dto.address !== undefined) {
       company.address = dto.address?.trim() ?? null;
@@ -369,7 +372,7 @@ export class CompaniesService {
         name: dto.name.trim(),
         slug,
         email: dto.email?.trim() ?? null,
-        phone: dto.phone?.trim() ?? null,
+        phone: dto.phone ? normalizeRwandaPhone(dto.phone) ?? dto.phone.trim() : null,
         address: dto.address?.trim() ?? null,
         registrationNumber: dto.registrationNumber?.trim() ?? null,
         timezone: dto.timezone ?? 'Africa/Kigali',

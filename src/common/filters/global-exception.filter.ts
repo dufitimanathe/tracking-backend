@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { ErrorCode } from '../enums';
+import { mapPostgresUniqueViolation } from '../utils/postgres-unique.util';
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
@@ -23,7 +24,19 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     let message = 'An unexpected error occurred.';
     let details: unknown;
 
-    if (exception instanceof HttpException) {
+    const uniqueMessage = mapPostgresUniqueViolation(exception);
+    if (uniqueMessage) {
+      status = HttpStatus.CONFLICT;
+      code = ErrorCode.CONFLICT;
+      message = uniqueMessage;
+      this.logger.warn({
+        event: 'unique_constraint_violation',
+        requestId: request.requestId,
+        path: request.url,
+        method: request.method,
+        message: uniqueMessage,
+      });
+    } else if (exception instanceof HttpException) {
       status = exception.getStatus();
       const body = exception.getResponse();
       if (typeof body === 'object' && body !== null) {
@@ -57,13 +70,21 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         message = body;
       }
     } else if (exception instanceof Error) {
-      message = exception.message;
+      // Never leak raw driver / database messages to clients.
+      const looksLikeDbError =
+        /duplicate key|violates unique constraint|violates foreign key|null value in column/i.test(
+          exception.message,
+        );
+      message = looksLikeDbError
+        ? 'An unexpected error occurred.'
+        : exception.message;
       this.logger.error(
         {
           event: 'unhandled_exception',
           requestId: request.requestId,
           path: request.url,
           method: request.method,
+          originalMessage: exception.message,
         },
         exception.stack,
       );

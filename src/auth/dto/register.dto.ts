@@ -7,6 +7,7 @@ import {
   MaxLength,
   MinLength,
 } from 'class-validator';
+import { IsRwandaPhone } from '../../common/validators/is-rwanda-phone.decorator';
 
 export class RegisterDto {
   @ApiProperty({ example: 'Jane' })
@@ -29,6 +30,7 @@ export class RegisterDto {
   @IsOptional()
   @IsString()
   @MaxLength(30)
+  @IsRwandaPhone()
   phone?: string;
 
   @ApiProperty({ example: 'SecurePass123!' })

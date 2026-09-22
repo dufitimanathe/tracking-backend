@@ -52,6 +52,7 @@ export class EmployeesController {
   }
 
   @Post()
+  @Roles(UserRole.COMPANY_ADMIN)
   @ApiSuccessResponse(EmployeeResponseDto)
   async create(
     @Param('companyId', ParseUUIDPipe) companyId: string,
@@ -62,6 +63,7 @@ export class EmployeesController {
   }
 
   @Patch(':employeeId')
+  @Roles(UserRole.COMPANY_ADMIN)
   @ApiSuccessResponse(EmployeeResponseDto)
   async update(
     @Param('companyId', ParseUUIDPipe) companyId: string,
@@ -73,6 +75,7 @@ export class EmployeesController {
   }
 
   @Post(':employeeId/deactivate')
+  @Roles(UserRole.COMPANY_ADMIN)
   @ApiSuccessResponse(EmployeeResponseDto)
   async deactivate(
     @Param('companyId', ParseUUIDPipe) companyId: string,

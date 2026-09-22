@@ -14,22 +14,26 @@ import {
   ConflictDomainException,
   DomainException,
 } from '../common/exceptions/domain.exception';
-import { ErrorCode, UserStatus } from '../common/enums';
+import { ErrorCode, MembershipStatus, UserStatus } from '../common/enums';
+import { normalizeActivationCode } from '../common/utils/activation-code.util';
 import { HttpStatus } from '@nestjs/common';
 import { UserResponseDto } from '../users/dto/user-response.dto';
 import { User } from '../users/entities/user.entity';
 import { UsersService } from '../users/users.service';
 import { AuthResponseDto } from './dto/auth-response.dto';
+import { ActivateAccountDto } from './dto/activate-account.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ConfirmPasswordResetDto } from './dto/confirm-password-reset.dto';
 import { LoginDto } from './dto/login.dto';
 import { MeResponseDto, MembershipSummaryDto } from './dto/me-response.dto';
 import { RegisterDto } from './dto/register.dto';
 import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
+import { EmailActivationToken } from './entities/email-activation-token.entity';
 import { PasswordResetToken } from './entities/password-reset-token.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { AuthJwtPayload, TokenPair } from './interfaces/jwt-payload.interface';
 import { parseDurationToMs } from './utils/duration.util';
+import { DataSource } from 'typeorm';
 
 @Injectable()
 export class AuthService {
@@ -42,10 +46,13 @@ export class AuthService {
     private readonly refreshTokenRepository: Repository<RefreshToken>,
     @InjectRepository(PasswordResetToken)
     private readonly passwordResetTokenRepository: Repository<PasswordResetToken>,
+    @InjectRepository(EmailActivationToken)
+    private readonly emailActivationTokenRepository: Repository<EmailActivationToken>,
     @InjectRepository(CompanyMember)
     private readonly companyMemberRepository: Repository<CompanyMember>,
     @InjectRepository(Company)
     private readonly companyRepository: Repository<Company>,
+    private readonly dataSource: DataSource,
   ) {}
 
   async register(dto: RegisterDto): Promise<AuthResponseDto> {
@@ -140,6 +147,14 @@ export class AuthService {
         ErrorCode.UNAUTHORIZED,
         'Invalid credentials.',
         HttpStatus.UNAUTHORIZED,
+      );
+    }
+
+    if (user.status === UserStatus.PENDING_VERIFICATION) {
+      throw new DomainException(
+        ErrorCode.FORBIDDEN,
+        'Please activate your account from the invite email before signing in.',
+        HttpStatus.FORBIDDEN,
       );
     }
 
@@ -345,6 +360,70 @@ export class AuthService {
     await this.revokeAllRefreshTokens(resetToken.userId);
   }
 
+  async activateAccount(
+    dto: ActivateAccountDto,
+  ): Promise<{ message: string; email?: string | null }> {
+    const tokenHash = this.hashActivationCode(dto.token);
+    const activation = await this.emailActivationTokenRepository.findOne({
+      where: {
+        tokenHash,
+        usedAt: IsNull(),
+        expiresAt: MoreThan(new Date()),
+      },
+    });
+
+    if (!activation) {
+      throw new DomainException(
+        ErrorCode.UNAUTHORIZED,
+        'Invalid or expired activation code.',
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+
+    const passwordHash = await argon2.hash(dto.password);
+
+    await this.dataSource.transaction(async (manager) => {
+      const userRepo = manager.getRepository(User);
+      const memberRepo = manager.getRepository(CompanyMember);
+      const tokenRepo = manager.getRepository(EmailActivationToken);
+
+      const user = await userRepo.findOne({ where: { id: activation.userId } });
+      if (!user) {
+        throw new DomainException(
+          ErrorCode.NOT_FOUND,
+          'User not found for this activation token.',
+          HttpStatus.NOT_FOUND,
+        );
+      }
+
+      user.passwordHash = passwordHash;
+      user.status = UserStatus.ACTIVE;
+      await userRepo.save(user);
+
+      if (activation.membershipId) {
+        const membership = await memberRepo.findOne({
+          where: { id: activation.membershipId },
+        });
+        if (membership && membership.status === MembershipStatus.INVITED) {
+          membership.status = MembershipStatus.ACTIVE;
+          await memberRepo.save(membership);
+        }
+      }
+
+      const token = await tokenRepo.findOne({ where: { id: activation.id } });
+      if (token) {
+        token.usedAt = new Date();
+        await tokenRepo.save(token);
+      }
+    });
+
+    const user = await this.usersService.findByIdOrFail(activation.userId);
+    return {
+      message: 'Account activated. You can sign in with your email and password.',
+      email: user.email,
+    };
+  }
+
   private async issueTokens(
     user: User,
     userAgent?: string,
@@ -399,6 +478,10 @@ export class AuthService {
 
   private hashToken(token: string): string {
     return createHash('sha256').update(token).digest('hex');
+  }
+
+  private hashActivationCode(raw: string): string {
+    return this.hashToken(normalizeActivationCode(raw));
   }
 
   private async revokeAllRefreshTokens(userId: string): Promise<void> {

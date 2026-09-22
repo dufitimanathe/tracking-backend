@@ -11,6 +11,7 @@ import {
   BillingDistanceSource,
   BillingPeriod,
 } from '../../common/enums';
+import { IsRwandaPhone } from '../../common/validators/is-rwanda-phone.decorator';
 
 export class UpdateCompanyDto {
   @ApiPropertyOptional()
@@ -26,10 +27,11 @@ export class UpdateCompanyDto {
   @MaxLength(255)
   email?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ example: '+250788123456' })
   @IsOptional()
   @IsString()
   @MaxLength(30)
+  @IsRwandaPhone()
   phone?: string;
 
   @ApiPropertyOptional()

@@ -18,7 +18,7 @@ export class BillingController {
   constructor(private readonly billingService: BillingService) {}
 
   @Get()
-  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR)
+  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR, UserRole.ACCOUNTANT)
   @ApiSuccessResponse(BillingRecordResponseDto, true)
   async list(
     @Param('companyId', ParseUUIDPipe) companyId: string,

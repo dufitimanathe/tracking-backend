@@ -16,6 +16,7 @@ import { successResponse } from '../common/dto/api-response.dto';
 import { RegisterCompanyDto } from '../companies/dto/register-company.dto';
 import { AuthService } from './auth.service';
 import { AuthResponseDto, AuthTokensDto } from './dto/auth-response.dto';
+import { ActivateAccountDto } from './dto/activate-account.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { ConfirmPasswordResetDto } from './dto/confirm-password-reset.dto';
 import { LoginDto } from './dto/login.dto';
@@ -94,6 +95,14 @@ export class AuthController {
   async me(@CurrentUser() user: AuthUser) {
     const profile = await this.authService.me(user.id);
     return successResponse(profile);
+  }
+
+  @Public()
+  @Post('activate')
+  @HttpCode(HttpStatus.OK)
+  async activate(@Body() dto: ActivateAccountDto) {
+    const result = await this.authService.activateAccount(dto);
+    return successResponse(result);
   }
 
   @Public()

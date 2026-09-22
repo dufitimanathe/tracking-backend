@@ -8,6 +8,7 @@ import {
   MaxLength,
   MinLength,
 } from 'class-validator';
+import { IsRwandaPhone } from '../../common/validators/is-rwanda-phone.decorator';
 
 export class CreateEmployeeDto {
   @ApiProperty({ example: 'Jane Doe' })
@@ -18,8 +19,8 @@ export class CreateEmployeeDto {
 
   @ApiProperty({ example: '+250788123456' })
   @IsString()
-  @MinLength(5)
   @MaxLength(30)
+  @IsRwandaPhone()
   phone!: string;
 
   @ApiPropertyOptional({ example: 'jane.doe@company.com' })

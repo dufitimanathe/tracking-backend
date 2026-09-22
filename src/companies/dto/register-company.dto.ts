@@ -10,6 +10,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { CreateCompanyDto } from './create-company.dto';
+import { IsRwandaPhone } from '../../common/validators/is-rwanda-phone.decorator';
 
 export class RegisterCompanyAdminDto {
   @ApiProperty({ example: 'Jane' })
@@ -32,6 +33,7 @@ export class RegisterCompanyAdminDto {
   @IsOptional()
   @IsString()
   @MaxLength(30)
+  @IsRwandaPhone()
   phone?: string;
 
   @ApiProperty({ example: 'SecurePass123!' })

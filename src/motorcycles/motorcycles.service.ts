@@ -1,12 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { getSkipTake } from '../common/dto/pagination.dto';
 import {
   ConflictDomainException,
   NotFoundDomainException,
 } from '../common/exceptions/domain.exception';
 import { ErrorCode, MotorcycleStatus } from '../common/enums';
+import { mapPostgresUniqueViolation } from '../common/utils/postgres-unique.util';
 import { CreateMotorcycleDto } from './dto/create-motorcycle.dto';
 import { MotorcycleQueryDto } from './dto/motorcycle-query.dto';
 import {
@@ -213,11 +214,7 @@ export class MotorcyclesService {
   }
 
   private handleUniqueViolation(error: unknown, plateNumber: string): void {
-    if (
-      error instanceof QueryFailedError &&
-      (error as QueryFailedError & { driverError?: { code?: string } }).driverError
-        ?.code === '23505'
-    ) {
+    if (mapPostgresUniqueViolation(error)) {
       throw new ConflictDomainException(
         ErrorCode.CONFLICT,
         `A motorcycle with plate ${plateNumber} already exists in this company.`,

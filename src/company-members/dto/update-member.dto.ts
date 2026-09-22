@@ -5,6 +5,7 @@ import { MembershipStatus, UserRole } from '../../common/enums';
 const MEMBER_ROLES = [
   UserRole.COMPANY_ADMIN,
   UserRole.SUPERVISOR,
+  UserRole.ACCOUNTANT,
   UserRole.RIDER,
   UserRole.EMPLOYEE,
 ] as const;

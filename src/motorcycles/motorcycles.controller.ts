@@ -26,7 +26,7 @@ import { MotorcyclesService } from './motorcycles.service';
 @ApiTags('motorcycles')
 @CompanyScoped()
 @UseGuards(CompanyAccessGuard, RolesGuard)
-@Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR)
+@Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR, UserRole.ACCOUNTANT)
 @Controller('companies/:companyId/motorcycles')
 export class MotorcyclesController {
   constructor(private readonly motorcyclesService: MotorcyclesService) {}
@@ -52,6 +52,7 @@ export class MotorcyclesController {
   }
 
   @Post()
+  @Roles(UserRole.COMPANY_ADMIN)
   @ApiSuccessResponse(MotorcycleResponseDto)
   async create(
     @Param('companyId', ParseUUIDPipe) companyId: string,
@@ -62,6 +63,7 @@ export class MotorcyclesController {
   }
 
   @Patch(':motorcycleId')
+  @Roles(UserRole.COMPANY_ADMIN)
   @ApiSuccessResponse(MotorcycleResponseDto)
   async update(
     @Param('companyId', ParseUUIDPipe) companyId: string,
@@ -73,6 +75,7 @@ export class MotorcyclesController {
   }
 
   @Patch(':motorcycleId/status')
+  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR)
   @ApiSuccessResponse(MotorcycleResponseDto)
   async updateStatus(
     @Param('companyId', ParseUUIDPipe) companyId: string,

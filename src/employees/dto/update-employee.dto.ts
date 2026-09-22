@@ -10,6 +10,7 @@ import {
   MinLength,
 } from 'class-validator';
 import { EmployeeStatus } from '../../common/enums';
+import { IsRwandaPhone } from '../../common/validators/is-rwanda-phone.decorator';
 
 export class UpdateEmployeeDto {
   @ApiPropertyOptional({ example: 'Jane Doe' })
@@ -22,8 +23,8 @@ export class UpdateEmployeeDto {
   @ApiPropertyOptional({ example: '+250788123456' })
   @IsOptional()
   @IsString()
-  @MinLength(5)
   @MaxLength(30)
+  @IsRwandaPhone()
   phone?: string;
 
   @ApiPropertyOptional({ example: 'jane.doe@company.com' })

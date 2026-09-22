@@ -1,12 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { QueryFailedError, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { getSkipTake } from '../common/dto/pagination.dto';
 import {
   ConflictDomainException,
   NotFoundDomainException,
 } from '../common/exceptions/domain.exception';
 import { EmployeeStatus, ErrorCode } from '../common/enums';
+import { normalizeRwandaPhone } from '../common/utils/rwanda-phone.util';
+import { mapPostgresUniqueViolation } from '../common/utils/postgres-unique.util';
 import { CreateEmployeeDto } from './dto/create-employee.dto';
 import { EmployeeQueryDto } from './dto/employee-query.dto';
 import { EmployeeResponseDto } from './dto/employee-response.dto';
@@ -71,10 +73,11 @@ export class EmployeesService {
     companyId: string,
     dto: CreateEmployeeDto,
   ): Promise<EmployeeResponseDto> {
+    const phone = normalizeRwandaPhone(dto.phone) ?? dto.phone;
     const employee = this.employeeRepository.create({
       companyId,
       fullName: dto.fullName,
-      phone: dto.phone,
+      phone,
       email: dto.email ?? null,
       employeeCode: dto.employeeCode ?? null,
       department: dto.department ?? null,
@@ -88,7 +91,7 @@ export class EmployeesService {
       const saved = await this.employeeRepository.save(employee);
       return EmployeeResponseDto.fromEntity(saved);
     } catch (error) {
-      this.handleUniqueViolation(error, dto.phone);
+      this.handleUniqueViolation(error, phone);
       throw error;
     }
   }
@@ -101,7 +104,9 @@ export class EmployeesService {
     const employee = await this.getEntityOrThrow(companyId, employeeId);
 
     if (dto.fullName !== undefined) employee.fullName = dto.fullName;
-    if (dto.phone !== undefined) employee.phone = dto.phone;
+    if (dto.phone !== undefined) {
+      employee.phone = normalizeRwandaPhone(dto.phone) ?? dto.phone;
+    }
     if (dto.email !== undefined) employee.email = dto.email ?? null;
     if (dto.employeeCode !== undefined) employee.employeeCode = dto.employeeCode ?? null;
     if (dto.department !== undefined) employee.department = dto.department ?? null;
@@ -170,11 +175,7 @@ export class EmployeesService {
   }
 
   private handleUniqueViolation(error: unknown, phone: string): void {
-    if (
-      error instanceof QueryFailedError &&
-      (error as QueryFailedError & { driverError?: { code?: string } }).driverError
-        ?.code === '23505'
-    ) {
+    if (mapPostgresUniqueViolation(error)) {
       throw new ConflictDomainException(
         ErrorCode.CONFLICT,
         `An employee with phone ${phone} already exists in this company.`,

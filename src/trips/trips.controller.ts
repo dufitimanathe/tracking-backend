@@ -35,7 +35,7 @@ export class TripsController {
 
   @Get('companies/:companyId/trips')
   @CompanyScoped()
-  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR, UserRole.EMPLOYEE, UserRole.RIDER)
+  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR, UserRole.ACCOUNTANT, UserRole.EMPLOYEE, UserRole.RIDER)
   @ApiSuccessResponse(TripResponseDto, true)
   async list(
     @Param('companyId', ParseUUIDPipe) companyId: string,

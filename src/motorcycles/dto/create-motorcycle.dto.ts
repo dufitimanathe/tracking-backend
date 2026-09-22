@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   IsInt,
   IsOptional,
@@ -8,6 +9,9 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
+
+/** Allow a few model-years ahead of the calendar (pre-orders / next-year stock). */
+const MAX_MOTORCYCLE_YEAR = new Date().getFullYear() + 5;
 
 export class CreateMotorcycleDto {
   @ApiProperty({ example: 'RAB 123A' })
@@ -36,9 +40,12 @@ export class CreateMotorcycleDto {
 
   @ApiPropertyOptional({ example: 2022 })
   @IsOptional()
-  @IsInt()
-  @Min(1980)
-  @Max(new Date().getFullYear() + 1)
+  @Type(() => Number)
+  @IsInt({ message: 'Year must be a whole number.' })
+  @Min(1980, { message: 'Year must be 1980 or later.' })
+  @Max(MAX_MOTORCYCLE_YEAR, {
+    message: `Year cannot be later than ${MAX_MOTORCYCLE_YEAR}.`,
+  })
   year?: number;
 
   @ApiPropertyOptional({ example: 'Red' })

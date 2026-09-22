@@ -11,6 +11,7 @@ import {
   BillingDistanceSource,
   BillingPeriod,
 } from '../../common/enums';
+import { IsRwandaPhone } from '../../common/validators/is-rwanda-phone.decorator';
 
 export class CreateCompanyDto {
   @ApiProperty({ example: 'Acme Transport Ltd' })
@@ -29,6 +30,7 @@ export class CreateCompanyDto {
   @IsOptional()
   @IsString()
   @MaxLength(30)
+  @IsRwandaPhone()
   phone?: string;
 
   @ApiPropertyOptional()

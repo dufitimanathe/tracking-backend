@@ -1,6 +1,7 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsEnum, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { RiderStatus } from '../../common/enums';
+import { IsRwandaPhone } from '../../common/validators/is-rwanda-phone.decorator';
 
 export class UpdateRiderDto {
   @ApiPropertyOptional({ enum: RiderStatus })
@@ -22,11 +23,11 @@ export class UpdateRiderDto {
   @MaxLength(100)
   lastName?: string;
 
-  @ApiPropertyOptional()
+  @ApiPropertyOptional({ example: '+250788999888' })
   @IsOptional()
   @IsString()
-  @MinLength(5)
   @MaxLength(30)
+  @IsRwandaPhone()
   phone?: string;
 
   @ApiPropertyOptional()

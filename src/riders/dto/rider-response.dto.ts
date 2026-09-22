@@ -73,9 +73,20 @@ export class RiderResponseDto {
 
 export class CreateRiderResultDto extends RiderResponseDto {
   @ApiPropertyOptional({
-    description: 'Temporary password when a new user account was created.',
+    description: 'Temporary password when invite email was not used (legacy / linked user).',
   })
   temporaryPassword?: string;
+
+  @ApiPropertyOptional({
+    description: 'True when an activation email was sent to the rider.',
+  })
+  inviteSent?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'Activation token also emailed to the rider. Shown once so admins can share it if mail is delayed.',
+  })
+  activationToken?: string;
 }
 
 export class RiderMotorcycleSummaryDto {

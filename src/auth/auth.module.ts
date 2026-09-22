@@ -14,6 +14,7 @@ import { PasswordResetToken } from './entities/password-reset-token.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { EmailActivationToken } from './entities/email-activation-token.entity';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     TypeOrmModule.forFeature([
       RefreshToken,
       PasswordResetToken,
+      EmailActivationToken,
       Company,
       CompanyMember,
     ]),

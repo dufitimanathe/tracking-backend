@@ -13,9 +13,26 @@ export default registerAs('app', () => ({
   jwt: {
     accessSecret: process.env.JWT_ACCESS_SECRET!,
     refreshSecret: process.env.JWT_REFRESH_SECRET!,
-    accessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN ?? '15m',
-    refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '7d',
+    accessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN ?? '8h',
+    refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '30d',
   },
+  mail: {
+    host: process.env.MAILER_HOST || '',
+    port: parseInt(process.env.MAILER_PORT ?? '587', 10),
+    user: process.env.MAILER_PRODUCER_EMAIL || '',
+    pass: process.env.MAILER_PRODUCER_PASSWORD || '',
+    rejectUnauthorized: (process.env.MAILER_REJECT_UNAUTHORIZED ?? 'false') === 'true',
+  },
+  /** Public web app URL (employee / supervisor / accountant activation). */
+  publicWebUrl: (process.env.APP_PUBLIC_WEB_URL ?? 'http://localhost:3001').replace(/\/$/, ''),
+  /**
+   * Deep link that opens the FleetOps mobile app for rider activation.
+   * Example: fleetops://activate
+   */
+  mobileActivationDeepLink: (
+    process.env.APP_MOBILE_ACTIVATION_DEEP_LINK ?? 'fleetops://activate'
+  ).replace(/\/$/, ''),
+  activationTokenTtlHours: parseInt(process.env.ACTIVATION_TOKEN_TTL_HOURS ?? '72', 10),
   database: {
     host: process.env.DATABASE_HOST!,
     port: parseInt(process.env.DATABASE_PORT ?? '5432', 10),

@@ -34,7 +34,7 @@ export class TransportRequestsController {
   constructor(private readonly transportRequestsService: TransportRequestsService) {}
 
   @Post()
-  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR, UserRole.EMPLOYEE)
+  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR, UserRole.ACCOUNTANT, UserRole.EMPLOYEE)
   @ApiSuccessResponse(TransportRequestResponseDto)
   async create(
     @Param('companyId', ParseUUIDPipe) companyId: string,
@@ -52,7 +52,7 @@ export class TransportRequestsController {
   }
 
   @Get()
-  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR, UserRole.EMPLOYEE)
+  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR, UserRole.ACCOUNTANT, UserRole.EMPLOYEE)
   @ApiSuccessResponse(TransportRequestResponseDto, true)
   async list(
     @Param('companyId', ParseUUIDPipe) companyId: string,
@@ -63,7 +63,7 @@ export class TransportRequestsController {
   }
 
   @Get(':id')
-  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR, UserRole.EMPLOYEE)
+  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR, UserRole.ACCOUNTANT, UserRole.EMPLOYEE)
   @ApiSuccessResponse(TransportRequestResponseDto)
   async getOne(
     @Param('companyId', ParseUUIDPipe) companyId: string,
@@ -74,7 +74,7 @@ export class TransportRequestsController {
   }
 
   @Post(':id/cancel')
-  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR, UserRole.EMPLOYEE)
+  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR, UserRole.ACCOUNTANT, UserRole.EMPLOYEE)
   @ApiSuccessResponse(TransportRequestResponseDto)
   async cancel(
     @Param('companyId', ParseUUIDPipe) companyId: string,
@@ -85,7 +85,7 @@ export class TransportRequestsController {
   }
 
   @Post(':id/confirm')
-  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR, UserRole.EMPLOYEE)
+  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR, UserRole.ACCOUNTANT, UserRole.EMPLOYEE)
   @ApiSuccessResponse(TransportRequestResponseDto)
   async confirm(
     @Param('companyId', ParseUUIDPipe) companyId: string,

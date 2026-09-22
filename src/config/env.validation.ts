@@ -18,10 +18,18 @@ export const envValidationSchema = Joi.object({
 
   JWT_ACCESS_SECRET: Joi.string().min(32).required(),
   JWT_REFRESH_SECRET: Joi.string().min(32).required(),
-  JWT_ACCESS_EXPIRES_IN: Joi.string().default('15m'),
-  JWT_REFRESH_EXPIRES_IN: Joi.string().default('7d'),
+  JWT_ACCESS_EXPIRES_IN: Joi.string().default('8h'),
+  JWT_REFRESH_EXPIRES_IN: Joi.string().default('30d'),
 
   CORS_ORIGINS: Joi.string().default('http://localhost:3001'),
+  APP_PUBLIC_WEB_URL: Joi.string().uri({ allowRelative: false }).default('http://localhost:3001'),
+  ACTIVATION_TOKEN_TTL_HOURS: Joi.number().default(72),
+
+  MAILER_HOST: Joi.string().allow('').optional(),
+  MAILER_PORT: Joi.number().default(587),
+  MAILER_PRODUCER_EMAIL: Joi.string().allow('').optional(),
+  MAILER_PRODUCER_PASSWORD: Joi.string().allow('').optional(),
+  MAILER_REJECT_UNAUTHORIZED: Joi.boolean().truthy('true').falsy('false').default(false),
 
   /** Paste from Google Cloud Console — server key (IP restricted). Empty = Haversine fallback. */
   GOOGLE_MAPS_API_KEY: Joi.string().allow('').optional(),

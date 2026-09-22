@@ -28,7 +28,7 @@ export class InvoicesController {
   constructor(private readonly invoicesService: InvoicesService) {}
 
   @Get()
-  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR)
+  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR, UserRole.ACCOUNTANT)
   @ApiSuccessResponse(InvoiceResponseDto, true)
   async list(
     @Param('companyId', ParseUUIDPipe) companyId: string,
@@ -39,7 +39,7 @@ export class InvoicesController {
   }
 
   @Get(':invoiceId')
-  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR)
+  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR, UserRole.ACCOUNTANT)
   @ApiSuccessResponse(InvoiceResponseDto)
   async getOne(
     @Param('companyId', ParseUUIDPipe) companyId: string,
@@ -50,7 +50,7 @@ export class InvoicesController {
   }
 
   @Post('generate')
-  @Roles(UserRole.COMPANY_ADMIN)
+  @Roles(UserRole.COMPANY_ADMIN, UserRole.ACCOUNTANT)
   @ApiSuccessResponse(InvoiceResponseDto)
   async generate(
     @Param('companyId', ParseUUIDPipe) companyId: string,

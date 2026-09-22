@@ -26,7 +26,7 @@ export class ReportsController {
   constructor(private readonly reportsService: ReportsService) {}
 
   @Get('summary')
-  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR)
+  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR, UserRole.ACCOUNTANT)
   @ApiSuccessResponse(ReportSummaryDto)
   async summary(
     @Param('companyId', ParseUUIDPipe) companyId: string,
@@ -41,7 +41,7 @@ export class ReportsController {
   }
 
   @Get('export.csv')
-  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR)
+  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR, UserRole.ACCOUNTANT)
   @Header('Content-Type', 'text/csv')
   @Header('Content-Disposition', 'attachment; filename="trips-export.csv"')
   async exportCsv(

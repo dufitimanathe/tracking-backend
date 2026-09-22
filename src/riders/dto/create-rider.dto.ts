@@ -7,6 +7,7 @@ import {
   MaxLength,
   MinLength,
 } from 'class-validator';
+import { IsRwandaPhone } from '../../common/validators/is-rwanda-phone.decorator';
 
 export class CreateRiderDto {
   @ApiProperty({ example: 'John' })
@@ -23,15 +24,14 @@ export class CreateRiderDto {
 
   @ApiProperty({ example: '+250788999888' })
   @IsString()
-  @MinLength(5)
   @MaxLength(30)
+  @IsRwandaPhone()
   phone!: string;
 
-  @ApiPropertyOptional({ example: 'rider@company.com' })
-  @IsOptional()
+  @ApiProperty({ example: 'rider@company.rw' })
   @IsEmail()
   @MaxLength(255)
-  email?: string;
+  email!: string;
 
   @ApiPropertyOptional({
     description: 'Link an existing platform user instead of creating one.',
@@ -47,7 +47,8 @@ export class CreateRiderDto {
   licenseNumber?: string;
 
   @ApiPropertyOptional({
-    description: 'Initial password for a newly created user. Generated if omitted.',
+    description:
+      'Optional. Riders normally set their own password via the mobile activation email.',
   })
   @IsOptional()
   @IsString()

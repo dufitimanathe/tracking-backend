@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthGuardsModule } from '../auth/auth-guards.module';
+import { EmailActivationToken } from '../auth/entities/email-activation-token.entity';
+import { Company } from '../companies/entities/company.entity';
 import { CompanyMember } from '../company-members/entities/company-member.entity';
 import { RiderMotorcycleAssignment } from '../rider-motorcycle-assignments/entities/rider-motorcycle-assignment.entity';
 import { Trip } from '../trips/entities/trip.entity';
@@ -14,9 +16,11 @@ import { RidersService } from './riders.service';
     TypeOrmModule.forFeature([
       Rider,
       User,
+      Company,
       CompanyMember,
       RiderMotorcycleAssignment,
       Trip,
+      EmailActivationToken,
     ]),
     AuthGuardsModule,
   ],

@@ -1,5 +1,6 @@
 import { PasswordResetToken } from '../auth/entities/password-reset-token.entity';
 import { RefreshToken } from '../auth/entities/refresh-token.entity';
+import { EmailActivationToken } from '../auth/entities/email-activation-token.entity';
 import { TransportRequestApproval } from '../approvals/entities/transport-request-approval.entity';
 import { BillingRecord } from '../billing/entities/billing-record.entity';
 import { PricingRule } from '../billing/entities/pricing-rule.entity';
@@ -40,6 +41,7 @@ export const entities = [
   CompanyMember,
   RefreshToken,
   PasswordResetToken,
+  EmailActivationToken,
   Employee,
   Rider,
   Motorcycle,

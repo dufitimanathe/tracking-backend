@@ -88,7 +88,7 @@ export class RidersController {
   }
 
   @Post()
-  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR)
+  @Roles(UserRole.COMPANY_ADMIN)
   @ApiSuccessResponse(CreateRiderResultDto)
   async create(
     @Param('companyId', ParseUUIDPipe) companyId: string,
@@ -99,7 +99,7 @@ export class RidersController {
   }
 
   @Patch(':riderId')
-  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR)
+  @Roles(UserRole.COMPANY_ADMIN)
   @ApiSuccessResponse(RiderResponseDto)
   async update(
     @Param('companyId', ParseUUIDPipe) companyId: string,
@@ -111,7 +111,7 @@ export class RidersController {
   }
 
   @Post(':riderId/deactivate')
-  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR)
+  @Roles(UserRole.COMPANY_ADMIN)
   @ApiSuccessResponse(RiderResponseDto)
   async deactivate(
     @Param('companyId', ParseUUIDPipe) companyId: string,

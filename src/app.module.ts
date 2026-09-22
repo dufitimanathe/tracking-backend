@@ -39,6 +39,7 @@ import { ReportsModule } from './reports/reports.module';
 import { RedisModule } from './common/redis/redis.module';
 import { TrackingModule } from './tracking/tracking.module';
 import { IntegrationsModule } from './integrations/integrations.module';
+import { MailModule } from './mail/mail.module';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { IntegrationsModule } from './integrations/integrations.module';
       load: [appConfig],
       validationSchema: envValidationSchema,
     }),
+    MailModule,
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
