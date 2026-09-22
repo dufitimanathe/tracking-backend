@@ -58,7 +58,9 @@ export class GpsFilterService {
       return { accepted: false, reason: 'INVALID_COORDINATES' };
     }
 
+    // Later pings: reject poor accuracy. First session fix always allowed so live map gets a pin.
     if (
+      previous &&
       accuracy != null &&
       Number.isFinite(accuracy) &&
       accuracy > tracking.accuracyThresholdMeters

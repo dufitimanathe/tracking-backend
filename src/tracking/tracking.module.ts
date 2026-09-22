@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthGuardsModule } from '../auth/auth-guards.module';
+import { Company } from '../companies/entities/company.entity';
 import { LocationPing } from '../locations/entities/location-ping.entity';
 import { MotorcycleCurrentLocation } from '../locations/entities/motorcycle-current-location.entity';
 import { LocationsModule } from '../locations/locations.module';
@@ -23,6 +24,7 @@ import { ReverseGeocodingService } from './services/reverse-geocoding.service';
 import { StopDetectionService } from './services/stop-detection.service';
 import { TrackingPresenceService } from './services/tracking-presence.service';
 import { TrackingQueryService } from './services/tracking-query.service';
+import { TrackingRetentionService } from './services/tracking-retention.service';
 import { TrackingSessionsService } from './services/tracking-sessions.service';
 import { TrackingController } from './tracking.controller';
 
@@ -40,6 +42,7 @@ import { TrackingController } from './tracking.controller';
       Motorcycle,
       RiderMotorcycleAssignment,
       User,
+      Company,
     ]),
     AuthGuardsModule,
     RealtimeModule,
@@ -57,12 +60,14 @@ import { TrackingController } from './tracking.controller';
     TrackingSessionsService,
     LocationIngestionService,
     TrackingQueryService,
+    TrackingRetentionService,
   ],
   exports: [
     TrackingSessionsService,
     LocationIngestionService,
     TrackingPresenceService,
     TrackingQueryService,
+    TrackingRetentionService,
     GpsFilterService,
     DistanceService,
   ],

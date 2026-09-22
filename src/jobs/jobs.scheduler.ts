@@ -36,5 +36,16 @@ export class JobsScheduler implements OnModuleInit {
         removeOnFail: 50,
       },
     );
+
+    // Once a day: drop location history older than each company's retention window.
+    await this.gpsQueue.add(
+      'tracking-retention-cleanup',
+      {},
+      {
+        repeat: { pattern: '15 3 * * *' },
+        removeOnComplete: 20,
+        removeOnFail: 20,
+      },
+    );
   }
 }

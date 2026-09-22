@@ -40,7 +40,12 @@ export class CompaniesController {
 
   @Get(':companyId')
   @UseGuards(CompanyAccessGuard, RolesGuard)
-  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR, UserRole.PLATFORM_ADMIN)
+  @Roles(
+    UserRole.COMPANY_ADMIN,
+    UserRole.SUPERVISOR,
+    UserRole.PLATFORM_ADMIN,
+    UserRole.RIDER,
+  )
   @ApiSuccessResponse(CompanyResponseDto)
   async findOne(@Param('companyId', ParseUUIDPipe) companyId: string) {
     const company = await this.companiesService.getCompanyResponse(companyId);

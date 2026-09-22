@@ -40,44 +40,58 @@ export class TrackingQueryService {
 
   async getLive(companyId: string): Promise<LiveDriverState[]> {
     const fromRedis = await this.presenceService.listCompanyLive(companyId);
-    if (fromRedis.length > 0) {
-      return fromRedis;
+    const byRider = new Map<string, LiveDriverState>();
+    for (const state of fromRedis) {
+      byRider.set(state.riderId, state);
     }
 
+    // Always merge last DB fix so pins stay on the map between sparse 10‑min pings
+    // (Redis TTL alone would otherwise drop riders mid-day).
     const fleet = await this.locationsService.getLiveFleet(companyId);
-    return fleet
-      .filter((f) => f.riderId && f.latitude != null && f.longitude != null)
-      .map((f): LiveDriverState => ({
-        riderId: f.riderId!,
+    for (const f of fleet) {
+      if (!f.riderId || f.latitude == null || f.longitude == null) continue;
+      const existing = byRider.get(f.riderId);
+      const capturedAt = f.recordedAt
+        ? new Date(f.recordedAt).toISOString()
+        : new Date().toISOString();
+      if (existing) {
+        const existingTs = new Date(existing.capturedAt).getTime();
+        const dbTs = f.recordedAt ? new Date(f.recordedAt).getTime() : 0;
+        if (dbTs <= existingTs) continue;
+      }
+      byRider.set(f.riderId, {
+        riderId: f.riderId,
         motorcycleId: f.motorcycleId,
         companyId,
-        trackingSessionId: '',
-        latitude: f.latitude!,
-        longitude: f.longitude!,
+        trackingSessionId: existing?.trackingSessionId ?? '',
+        latitude: f.latitude,
+        longitude: f.longitude,
         speed: f.speed ?? null,
         heading: f.heading ?? null,
-        accuracy: null,
+        accuracy: existing?.accuracy ?? null,
         movementState:
           f.trackingStatus === 'MOVING'
             ? TrackingMovementState.MOVING
-            : TrackingMovementState.TRACKING,
+            : f.trackingStatus === 'PARKED'
+              ? TrackingMovementState.STOPPED
+              : TrackingMovementState.TRACKING,
         presence:
           f.freshness === 'LIVE'
             ? TrackingPresenceState.LIVE
             : f.freshness === 'DELAYED'
               ? TrackingPresenceState.DELAYED
               : TrackingPresenceState.OFFLINE,
-        capturedAt: f.recordedAt
-          ? new Date(f.recordedAt).toISOString()
-          : new Date().toISOString(),
-        receivedAt: f.recordedAt
-          ? new Date(f.recordedAt).toISOString()
-          : new Date().toISOString(),
-        totalDistanceMeters: 0,
-        riderName: f.riderName ?? null,
-        phone: null,
-        plateNumber: f.plateNumber ?? null,
-      }));
+        capturedAt,
+        receivedAt: capturedAt,
+        totalDistanceMeters: existing?.totalDistanceMeters ?? 0,
+        riderName: f.riderName ?? existing?.riderName ?? null,
+        phone: existing?.phone ?? null,
+        plateNumber: f.plateNumber ?? existing?.plateNumber ?? null,
+        placeName: existing?.placeName ?? null,
+      });
+    }
+
+    return [...byRider.values()];
   }
 
   async getSessionRoute(

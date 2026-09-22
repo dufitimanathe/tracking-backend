@@ -1,10 +1,14 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsBoolean,
   IsEmail,
   IsEnum,
+  IsInt,
   IsOptional,
   IsString,
+  Max,
   MaxLength,
+  Min,
   MinLength,
 } from 'class-validator';
 import {
@@ -73,4 +77,32 @@ export class UpdateCompanyDto {
   @IsOptional()
   @IsEnum(BillingDistanceSource)
   billingDistanceSource?: BillingDistanceSource;
+
+  @ApiPropertyOptional({
+    description: 'Minutes between rider GPS uploads (5–60). Default 10 for low-end phones.',
+    example: 10,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(5)
+  @Max(60)
+  trackingShareIntervalMinutes?: number;
+
+  @ApiPropertyOptional({
+    description: 'Days to keep daily parked/history location pings.',
+    example: 30,
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(3650)
+  trackingHistoryRetentionDays?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'If true, only the last GPS ping per motorcycle per day is stored in history.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  trackingKeepDailyLastPingOnly?: boolean;
 }

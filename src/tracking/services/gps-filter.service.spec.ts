@@ -43,11 +43,25 @@ describe('GpsFilterService', () => {
     if (!result.accepted) expect(result.reason).toBe('INVALID_COORDINATES');
   });
 
-  it('rejects poor accuracy', () => {
+  it('rejects poor accuracy on later points', () => {
     const svc = makeService();
-    const result = svc.validate({ ...base, accuracy: 200 }, null);
+    const result = svc.validate(
+      { ...base, accuracy: 200, clientLocationId: '22222222-2222-2222-2222-222222222222' },
+      {
+        latitude: base.latitude,
+        longitude: base.longitude,
+        capturedAt: new Date('2026-01-01T09:50:00.000Z'),
+        clientLocationId: 'prev',
+      },
+    );
     expect(result.accepted).toBe(false);
     if (!result.accepted) expect(result.reason).toBe('POOR_ACCURACY');
+  });
+
+  it('accepts poor accuracy on the first session point', () => {
+    const svc = makeService();
+    const result = svc.validate({ ...base, accuracy: 200 }, null);
+    expect(result.accepted).toBe(true);
   });
 
   it('rejects duplicate clientLocationId', () => {

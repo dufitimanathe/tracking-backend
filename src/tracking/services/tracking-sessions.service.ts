@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
   ErrorCode,
+  LocationSource,
   MotorcycleTrackingStatus,
   RiderStatus,
   TrackingMovementState,
@@ -10,6 +11,7 @@ import {
 } from '../../common/enums';
 import { DomainException } from '../../common/exceptions/domain.exception';
 import { toPointGeoJson } from '../../common/utils/geo.util';
+import { MotorcycleCurrentLocation } from '../../locations/entities/motorcycle-current-location.entity';
 import { Motorcycle } from '../../motorcycles/entities/motorcycle.entity';
 import { REALTIME_EVENTS } from '../../realtime/realtime.constants';
 import { RealtimeService } from '../../realtime/realtime.service';
@@ -33,6 +35,8 @@ export class TrackingSessionsService {
     private readonly assignmentRepository: Repository<RiderMotorcycleAssignment>,
     @InjectRepository(Motorcycle)
     private readonly motorcycleRepository: Repository<Motorcycle>,
+    @InjectRepository(MotorcycleCurrentLocation)
+    private readonly currentLocationRepository: Repository<MotorcycleCurrentLocation>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     private readonly realtimeService: RealtimeService,
@@ -165,6 +169,20 @@ export class TrackingSessionsService {
     const saved = await this.sessionRepository.save(session);
     await this.presenceService.clearDriver(session.companyId, session.riderId);
 
+    // Last shared fix becomes the motorcycle's parked reference (no hardware GPS yet).
+    await this.motorcycleRepository.update(session.motorcycleId, {
+      trackingStatus: MotorcycleTrackingStatus.PARKED,
+    });
+    if (session.endLatitude != null && session.endLongitude != null) {
+      await this.markParkedReference(
+        session.motorcycleId,
+        session.companyId,
+        session.endLatitude,
+        session.endLongitude,
+        now,
+      );
+    }
+
     this.realtimeService.emitToCompany(
       session.companyId,
       REALTIME_EVENTS.TRACKING_SESSION_ENDED,
@@ -174,10 +192,38 @@ export class TrackingSessionsService {
         motorcycleId: session.motorcycleId,
         endedAt: now.toISOString(),
         totalDistanceMeters: session.totalDistanceMeters,
+        parkedLatitude: session.endLatitude ?? null,
+        parkedLongitude: session.endLongitude ?? null,
       },
     );
 
     return saved;
+  }
+
+  /** Persist last phone fix as where the motorcycle was left. */
+  private async markParkedReference(
+    motorcycleId: string,
+    companyId: string,
+    latitude: number,
+    longitude: number,
+    recordedAt: Date,
+  ): Promise<void> {
+    let current = await this.currentLocationRepository.findOne({
+      where: { motorcycleId },
+    });
+    if (!current) {
+      current = this.currentLocationRepository.create({
+        motorcycleId,
+        companyId,
+      });
+    }
+    current.latitude = latitude;
+    current.longitude = longitude;
+    current.position = toPointGeoJson({ lat: latitude, lng: longitude });
+    current.speed = 0;
+    current.source = LocationSource.RIDER_APP;
+    current.recordedAt = recordedAt;
+    await this.currentLocationRepository.save(current);
   }
 
   async getForCompany(companyId: string, sessionId: string): Promise<TrackingSession> {

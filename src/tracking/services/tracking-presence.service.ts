@@ -25,6 +25,8 @@ export interface LiveDriverState {
   riderName?: string | null;
   phone?: string | null;
   plateNumber?: string | null;
+  /** Reverse-geocoded place label for the live pin. */
+  placeName?: string | null;
 }
 
 @Injectable()

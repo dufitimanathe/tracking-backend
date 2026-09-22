@@ -210,6 +210,15 @@ export class CompaniesService {
     if (dto.billingDistanceSource !== undefined) {
       company.billingDistanceSource = dto.billingDistanceSource;
     }
+    if (dto.trackingShareIntervalMinutes !== undefined) {
+      company.trackingShareIntervalMinutes = dto.trackingShareIntervalMinutes;
+    }
+    if (dto.trackingHistoryRetentionDays !== undefined) {
+      company.trackingHistoryRetentionDays = dto.trackingHistoryRetentionDays;
+    }
+    if (dto.trackingKeepDailyLastPingOnly !== undefined) {
+      company.trackingKeepDailyLastPingOnly = dto.trackingKeepDailyLastPingOnly;
+    }
 
     const saved = await this.companyRepository.save(company);
     return CompanyResponseDto.fromEntity(saved);

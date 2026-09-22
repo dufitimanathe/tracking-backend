@@ -55,4 +55,19 @@ export class Company extends BaseEntity {
     default: BillingDistanceSource.ROUTE_ESTIMATE,
   })
   billingDistanceSource!: BillingDistanceSource;
+
+  /** How often the rider app should upload GPS (battery-friendly). */
+  @Column({ type: 'int', default: 10 })
+  trackingShareIntervalMinutes!: number;
+
+  /** How many days of parked/history pings to retain. */
+  @Column({ type: 'int', default: 30 })
+  trackingHistoryRetentionDays!: number;
+
+  /**
+   * When true, only the last GPS ping per motorcycle per calendar day is kept
+   * in location_pings (motorcycle_current_locations still holds the live/parked fix).
+   */
+  @Column({ type: 'boolean', default: true })
+  trackingKeepDailyLastPingOnly!: boolean;
 }

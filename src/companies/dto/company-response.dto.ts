@@ -47,6 +47,15 @@ export class CompanyResponseDto {
   @ApiProperty({ enum: BillingDistanceSource })
   billingDistanceSource!: BillingDistanceSource;
 
+  @ApiProperty({ example: 10 })
+  trackingShareIntervalMinutes!: number;
+
+  @ApiProperty({ example: 30 })
+  trackingHistoryRetentionDays!: number;
+
+  @ApiProperty({ example: true })
+  trackingKeepDailyLastPingOnly!: boolean;
+
   @ApiProperty()
   createdAt!: Date;
 
@@ -68,6 +77,9 @@ export class CompanyResponseDto {
       status: company.status,
       billingPeriod: company.billingPeriod,
       billingDistanceSource: company.billingDistanceSource,
+      trackingShareIntervalMinutes: company.trackingShareIntervalMinutes ?? 10,
+      trackingHistoryRetentionDays: company.trackingHistoryRetentionDays ?? 30,
+      trackingKeepDailyLastPingOnly: company.trackingKeepDailyLastPingOnly ?? true,
       createdAt: company.createdAt,
       updatedAt: company.updatedAt,
     };

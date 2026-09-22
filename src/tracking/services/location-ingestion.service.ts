@@ -10,6 +10,7 @@ import {
 } from '../../common/enums';
 import { DomainException } from '../../common/exceptions/domain.exception';
 import { toPointGeoJson } from '../../common/utils/geo.util';
+import { Company } from '../../companies/entities/company.entity';
 import { LocationPing } from '../../locations/entities/location-ping.entity';
 import { MotorcycleCurrentLocation } from '../../locations/entities/motorcycle-current-location.entity';
 import { Motorcycle } from '../../motorcycles/entities/motorcycle.entity';
@@ -22,11 +23,13 @@ import { TrackingSession } from '../entities/tracking-session.entity';
 import { GpsFilterService } from './gps-filter.service';
 import { GeofenceService } from './geofence.service';
 import { MovementDetectionService } from './movement-detection.service';
+import { ReverseGeocodingService } from './reverse-geocoding.service';
 import { StopDetectionService } from './stop-detection.service';
 import {
   LiveDriverState,
   TrackingPresenceService,
 } from './tracking-presence.service';
+import { TrackingRetentionService } from './tracking-retention.service';
 import { TrackingSessionsService } from './tracking-sessions.service';
 
 export interface IngestResult {
@@ -56,6 +59,8 @@ export class LocationIngestionService {
     private readonly motorcycleRepository: Repository<Motorcycle>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(Company)
+    private readonly companyRepository: Repository<Company>,
     private readonly sessionsService: TrackingSessionsService,
     private readonly gpsFilter: GpsFilterService,
     private readonly movementDetection: MovementDetectionService,
@@ -63,6 +68,8 @@ export class LocationIngestionService {
     private readonly geofenceService: GeofenceService,
     private readonly presenceService: TrackingPresenceService,
     private readonly realtimeService: RealtimeService,
+    private readonly retentionService: TrackingRetentionService,
+    private readonly reverseGeocoding: ReverseGeocodingService,
   ) {}
 
   async ingestForUser(userId: string, dto: LocationUpdateDto): Promise<IngestResult> {
@@ -174,7 +181,7 @@ export class LocationIngestionService {
     const sample = filtered.value;
     const receivedAt = new Date();
 
-    await this.pingRepository.save(
+    const savedPing = await this.pingRepository.save(
       this.pingRepository.create({
         companyId: rider.companyId,
         motorcycleId: session.motorcycleId,
@@ -194,6 +201,18 @@ export class LocationIngestionService {
         receivedAt,
       }),
     );
+
+    const company = await this.companyRepository.findOne({
+      where: { id: rider.companyId },
+    });
+    if (company?.trackingKeepDailyLastPingOnly !== false) {
+      await this.retentionService.compactDayForMotorcycle(
+        rider.companyId,
+        session.motorcycleId,
+        capturedAt,
+        savedPing.id,
+      );
+    }
 
     const movement = this.movementDetection.evaluate(
       {
@@ -313,6 +332,23 @@ export class LocationIngestionService {
       where: { id: session.motorcycleId },
     });
 
+    let placeName: string | null = session.startAddress ?? null;
+    try {
+      const resolved = await this.reverseGeocoding.reverse(
+        sample.latitude,
+        sample.longitude,
+      );
+      if (resolved) {
+        placeName = resolved;
+        if (!session.startAddress) {
+          session.startAddress = resolved;
+          await this.sessionRepository.save(session);
+        }
+      }
+    } catch (err) {
+      this.logger.debug(`Reverse geocode skipped: ${(err as Error).message}`);
+    }
+
     const live: LiveDriverState = {
       riderId: rider.id,
       motorcycleId: session.motorcycleId,
@@ -331,6 +367,7 @@ export class LocationIngestionService {
       riderName: user ? `${user.firstName} ${user.lastName}`.trim() : null,
       phone: rider.phone,
       plateNumber: moto?.plateNumber ?? null,
+      placeName,
     };
     await this.presenceService.setLiveState(live);
 
