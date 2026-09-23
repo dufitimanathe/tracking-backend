@@ -8,6 +8,9 @@ loadEnv();
 
 const ADMIN_EMAIL = process.env.SEED_ADMIN_EMAIL ?? 'theodufi.rw@gmail.com';
 const ADMIN_PASSWORD = process.env.SEED_ADMIN_PASSWORD ?? 'Password123!';
+const COMPANY_NAME = 'Kampere Motari Ltd';
+const COMPANY_PHONE = '+250782027429';
+// Keep the existing tenant identifier so reseeding updates the same company.
 const COMPANY_SLUG = 'virunga-transport-ltd';
 
 async function ensureAdmin(
@@ -95,15 +98,20 @@ async function runSeed(): Promise<void> {
 
       if (existingCompany.length > 0) {
         companyId = existingCompany[0].id as string;
+        await manager.query(
+          `UPDATE companies SET name = $1, phone = $2, "updatedAt" = now()
+           WHERE id = $3 AND (name IS DISTINCT FROM $1 OR phone IS DISTINCT FROM $2)`,
+          [COMPANY_NAME, COMPANY_PHONE, companyId],
+        );
       } else {
         const company = await manager.query(
           `INSERT INTO companies (name, slug, email, phone, address, timezone, currency)
            VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
           [
-            'Virunga Transport Ltd',
+            COMPANY_NAME,
             COMPANY_SLUG,
-            'info@virunga.rw',
-            '+250788200000',
+            'info@kamotari.rw',
+            COMPANY_PHONE,
             'KG 9 Ave, Kacyiru, Kigali',
             'Africa/Kigali',
             'RWF',

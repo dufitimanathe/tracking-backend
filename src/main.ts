@@ -21,6 +21,13 @@ async function bootstrap(): Promise<void> {
   app.enableCors({
     origin: corsOrigins.length ? corsOrigins : true,
     credentials: true,
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'x-company-id',
+      'x-request-id',
+      'ngrok-skip-browser-warning',
+    ],
   });
   app.use(new RequestIdMiddleware().use.bind(new RequestIdMiddleware()));
   app.useGlobalPipes(

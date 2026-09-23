@@ -20,6 +20,8 @@ Multi-tenant NestJS backend for corporate motorcycle transport, fleet GPS, dispa
 - Docker Desktop (recommended) **or** local PostgreSQL 16 + PostGIS + Redis 7
 - npm
 
+
+
 ### 2. Environment
 
 ```bash
@@ -34,6 +36,8 @@ Required secrets are validated at startup (`JWT_*` must be ≥ 32 chars).
 docker compose up -d postgres redis
 ```
 
+
+
 ### 4. Install & migrate
 
 ```bash
@@ -43,7 +47,8 @@ npm run migration:run
 npm run seed
 ```
 
-Seed company: **Virunga Transport Ltd**  
+Seed company: **Kampere Motari Ltd**
+
 Admin: `theodufi.rw@gmail.com` / `Password123!`
 
 ### 5. Run API (+ optional worker)
@@ -56,6 +61,8 @@ npm run start:worker
 - API: `http://localhost:3000/api/v1`
 - Health: `http://localhost:3000/health`
 - Swagger: `http://localhost:3000/api/docs`
+
+
 
 ### Full stack with Docker
 
@@ -87,20 +94,25 @@ Company A **cannot** read Company B data (membership + `companyId` query scoping
 
 ## Key modules
 
-| Area | Path |
-|------|------|
-| Auth / tenancy | `src/auth`, `src/companies`, `src/company-members` |
-| Fleet | `src/riders`, `src/motorcycles`, `src/locations` |
-| Ops | `src/transport-requests`, `src/approvals`, `src/trips`, `src/dispatch` |
-| Money | `src/billing`, `src/invoices` (decimal.js, not float) |
-| Safety | `src/incidents`, `src/realtime` |
-| Integrations | `src/maps`, `src/whatsapp`, `src/ai` |
+
+| Area           | Path                                                                   |
+| -------------- | ---------------------------------------------------------------------- |
+| Auth / tenancy | `src/auth`, `src/companies`, `src/company-members`                     |
+| Fleet          | `src/riders`, `src/motorcycles`, `src/locations`                       |
+| Ops            | `src/transport-requests`, `src/approvals`, `src/trips`, `src/dispatch` |
+| Money          | `src/billing`, `src/invoices` (decimal.js, not float)                  |
+| Safety         | `src/incidents`, `src/realtime`                                        |
+| Integrations   | `src/maps`, `src/whatsapp`, `src/ai`                                   |
+
+
+
 
 ## Pricing (default RWF)
 
 - First 1 km → **500**
-- Each additional km → **400**  
-Configured per company via `pricing_rules` (not hard-coded in trip service).
+- 
+
+
 
 ## Tests
 
@@ -108,6 +120,8 @@ Configured per company via `pricing_rules` (not hard-coded in trip service).
 npm test
 npm run test:e2e   # when DB available
 ```
+
+
 
 ## External integrations
 
@@ -120,3 +134,4 @@ See **[docs/INTEGRATION_REQUIREMENTS.md](docs/INTEGRATION_REQUIREMENTS.md)** for
 - Webhooks: WhatsApp signature + message idempotency
 - GPS provider abstraction (not vendor-locked)
 - No cascade-delete of trip/billing history
+
