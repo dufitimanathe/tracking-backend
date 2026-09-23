@@ -91,7 +91,17 @@ export class TrackingQueryService {
       });
     }
 
-    return [...byRider.values()];
+    return [...byRider.values()].map((state) => {
+      const parked = state.movementState === TrackingMovementState.STOPPED;
+      const health = parked
+        ? ('STOPPED' as const)
+        : this.presenceService.computeSessionHealth(new Date(state.capturedAt));
+      return {
+        ...state,
+        presence: this.presenceService.computePresence(new Date(state.capturedAt)),
+        sessionHealth: health,
+      };
+    });
   }
 
   async getSessionRoute(

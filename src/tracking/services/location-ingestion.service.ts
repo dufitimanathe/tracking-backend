@@ -10,6 +10,10 @@ import {
 } from '../../common/enums';
 import { DomainException } from '../../common/exceptions/domain.exception';
 import { toPointGeoJson } from '../../common/utils/geo.util';
+import {
+  classifyGpsAccuracy,
+  shouldReplaceLiveLocation,
+} from '../../common/utils/gps-quality.util';
 import { Company } from '../../companies/entities/company.entity';
 import { LocationPing } from '../../locations/entities/location-ping.entity';
 import { MotorcycleCurrentLocation } from '../../locations/entities/motorcycle-current-location.entity';
@@ -96,6 +100,179 @@ export class LocationIngestionService {
     };
   }
 
+  /**
+   * Cheap path for phone background pings: update live pin + Redis only.
+   * Skips reverse geocode, geofence, movement detection, and day compaction.
+   */
+  async ingestLite(
+    userId: string,
+    dto: {
+      trackingSessionId: string;
+      latitude: number;
+      longitude: number;
+      capturedAt: string;
+      clientLocationId?: string;
+      accuracy?: number;
+    },
+  ): Promise<{ accepted: true }> {
+    const rider = await this.sessionsService.resolveActiveRider(userId);
+    const session = await this.sessionRepository.findOne({
+      where: {
+        id: dto.trackingSessionId,
+        riderId: rider.id,
+        companyId: rider.companyId,
+      },
+    });
+    if (!session || session.status !== TrackingSessionStatus.ACTIVE) {
+      throw new DomainException(
+        ErrorCode.TRIP_INVALID_STATE,
+        'No active tracking session for this upload.',
+        HttpStatus.CONFLICT,
+      );
+    }
+
+    const capturedAt = new Date(dto.capturedAt);
+    const receivedAt = new Date();
+    const quality = classifyGpsAccuracy(dto.accuracy);
+    if (quality === 'rejected') {
+      return { accepted: true }; // ack phone; do not move live pin
+    }
+
+    const clientLocationId =
+      dto.clientLocationId ??
+      `lite-${session.id}-${capturedAt.getTime()}`;
+
+    let current = await this.currentLocationRepository.findOne({
+      where: { motorcycleId: session.motorcycleId },
+    });
+
+    const replaceLive = shouldReplaceLiveLocation({
+      incomingAccuracy: dto.accuracy,
+      currentAccuracy: current?.accuracy ?? null,
+      currentCapturedAt: current?.recordedAt ?? null,
+      now: receivedAt,
+    });
+
+    if (!current) {
+      current = this.currentLocationRepository.create({
+        motorcycleId: session.motorcycleId,
+        companyId: session.companyId,
+      });
+    }
+
+    if (replaceLive) {
+      current.latitude = dto.latitude;
+      current.longitude = dto.longitude;
+      current.position = toPointGeoJson({
+        lat: dto.latitude,
+        lng: dto.longitude,
+      });
+      current.speed = null;
+      current.heading = null;
+      current.accuracy = dto.accuracy ?? null;
+      current.source = LocationSource.RIDER_APP;
+      current.recordedAt = capturedAt;
+      await this.currentLocationRepository.save(current);
+
+      session.endLatitude = dto.latitude;
+      session.endLongitude = dto.longitude;
+      session.lastLocationAt = capturedAt;
+      if (session.startLatitude == null) {
+        session.startLatitude = dto.latitude;
+        session.startLongitude = dto.longitude;
+        session.startLocation = toPointGeoJson({
+          lat: dto.latitude,
+          lng: dto.longitude,
+        });
+      }
+      await this.sessionRepository.save(session);
+
+      await this.motorcycleRepository.update(session.motorcycleId, {
+        trackingStatus: MotorcycleTrackingStatus.ONLINE,
+      });
+
+      rider.currentLatitude = String(dto.latitude);
+      rider.currentLongitude = String(dto.longitude);
+      rider.position = toPointGeoJson({ lat: dto.latitude, lng: dto.longitude });
+      rider.locationUpdatedAt = receivedAt;
+      await this.riderRepository.save(rider);
+    } else {
+      // Keep good recent pin; still refresh last-seen so presence stays live.
+      session.lastLocationAt = capturedAt;
+      await this.sessionRepository.save(session);
+    }
+
+    // Persist one ping for history / daily-last without compacting on the hot path.
+    try {
+      await this.pingRepository.save(
+        this.pingRepository.create({
+          companyId: rider.companyId,
+          motorcycleId: session.motorcycleId,
+          riderId: rider.id,
+          tripId: session.tripId ?? null,
+          trackingSessionId: session.id,
+          clientLocationId,
+          position: toPointGeoJson({ lat: dto.latitude, lng: dto.longitude }),
+          latitude: dto.latitude,
+          longitude: dto.longitude,
+          speed: null,
+          heading: null,
+          accuracy: dto.accuracy ?? null,
+          altitude: null,
+          source: LocationSource.RIDER_APP,
+          recordedAt: capturedAt,
+          receivedAt,
+        }),
+      );
+    } catch {
+      // Idempotent / unique conflict — ignore
+    }
+
+    const user = await this.userRepository.findOne({ where: { id: rider.userId } });
+    const moto = await this.motorcycleRepository.findOne({
+      where: { id: session.motorcycleId },
+    });
+
+    const liveLat = replaceLive ? dto.latitude : (current.latitude ?? dto.latitude);
+    const liveLng = replaceLive ? dto.longitude : (current.longitude ?? dto.longitude);
+    const liveAccuracy = replaceLive
+      ? (dto.accuracy ?? null)
+      : (current.accuracy ?? dto.accuracy ?? null);
+    const liveCapturedAt = replaceLive
+      ? capturedAt
+      : (current.recordedAt ?? capturedAt);
+
+    const live: LiveDriverState = {
+      riderId: rider.id,
+      motorcycleId: session.motorcycleId,
+      companyId: rider.companyId,
+      trackingSessionId: session.id,
+      latitude: liveLat,
+      longitude: liveLng,
+      speed: null,
+      heading: null,
+      accuracy: liveAccuracy,
+      movementState: TrackingMovementState.TRACKING,
+      presence: this.presenceService.computePresence(liveCapturedAt, receivedAt),
+      capturedAt: liveCapturedAt.toISOString(),
+      receivedAt: receivedAt.toISOString(),
+      totalDistanceMeters: session.totalDistanceMeters,
+      riderName: user ? `${user.firstName} ${user.lastName}`.trim() : null,
+      phone: rider.phone,
+      plateNumber: moto?.plateNumber ?? null,
+      placeName: session.startAddress ?? null,
+    };
+    await this.presenceService.setLiveState(live);
+
+    this.realtimeService.emitToCompany(
+      rider.companyId,
+      REALTIME_EVENTS.TRACKING_DRIVER_LOCATION,
+      live,
+    );
+
+    return { accepted: true };
+  }
+
   private async ingestForRider(
     rider: Rider,
     dto: LocationUpdateDto,
@@ -150,6 +327,7 @@ export class LocationIngestionService {
             longitude: previous.longitude,
             capturedAt: previous.recordedAt,
             clientLocationId: previous.clientLocationId,
+            accuracy: previous.accuracy,
           }
         : null,
     );

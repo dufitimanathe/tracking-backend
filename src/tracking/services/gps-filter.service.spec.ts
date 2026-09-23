@@ -44,18 +44,55 @@ describe('GpsFilterService', () => {
   });
 
   it('rejects poor accuracy on later points', () => {
-    const svc = makeService();
+    const svc = makeService({ accuracyThresholdMeters: 500 });
     const result = svc.validate(
-      { ...base, accuracy: 200, clientLocationId: '22222222-2222-2222-2222-222222222222' },
+      { ...base, accuracy: 600, clientLocationId: '22222222-2222-2222-2222-222222222222' },
       {
         latitude: base.latitude,
         longitude: base.longitude,
         capturedAt: new Date('2026-01-01T09:50:00.000Z'),
         clientLocationId: 'prev',
+        accuracy: 10,
       },
     );
     expect(result.accepted).toBe(false);
     if (!result.accepted) expect(result.reason).toBe('POOR_ACCURACY');
+  });
+
+  it('rejects worse reading that would replace a recent good pin', () => {
+    const svc = makeService({ accuracyThresholdMeters: 500 });
+    const result = svc.validate(
+      {
+        ...base,
+        accuracy: 250,
+        clientLocationId: '22222222-2222-2222-2222-222222222222',
+        capturedAt: new Date('2026-01-01T10:00:10.000Z'),
+      },
+      {
+        latitude: base.latitude,
+        longitude: base.longitude,
+        capturedAt: base.capturedAt,
+        clientLocationId: 'prev',
+        accuracy: 20,
+      },
+    );
+    expect(result.accepted).toBe(false);
+    if (!result.accepted) expect(result.reason).toBe('POOR_ACCURACY');
+  });
+
+  it('accepts moderate accuracy within raised threshold', () => {
+    const svc = makeService({ accuracyThresholdMeters: 500 });
+    const result = svc.validate(
+      { ...base, accuracy: 70, clientLocationId: '22222222-2222-2222-2222-222222222222' },
+      {
+        latitude: base.latitude,
+        longitude: base.longitude,
+        capturedAt: new Date('2026-01-01T09:50:00.000Z'),
+        clientLocationId: 'prev',
+        accuracy: 40,
+      },
+    );
+    expect(result.accepted).toBe(true);
   });
 
   it('accepts poor accuracy on the first session point', () => {

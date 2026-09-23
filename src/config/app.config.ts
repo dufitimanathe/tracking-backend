@@ -77,10 +77,10 @@ export default registerAs('app', () => ({
     routeDeviationMeters: parseInt(process.env.TRACKING_ROUTE_DEVIATION_METERS ?? '120', 10),
     /** Soft ETA lateness window before nagging rider (seconds) — consumed by mobile later. */
     etaGraceSeconds: parseInt(process.env.TRACKING_ETA_GRACE_SECONDS ?? '180', 10),
-    accuracyThresholdMeters: parseFloat(process.env.LOCATION_ACCURACY_THRESHOLD_M ?? '150'),
+    accuracyThresholdMeters: parseFloat(process.env.LOCATION_ACCURACY_THRESHOLD_M ?? '500'),
     movingSpeedThresholdMps: parseFloat(process.env.MOVING_SPEED_THRESHOLD_MPS ?? '1.5'),
     stoppedSpeedThresholdMps: parseFloat(process.env.STOPPED_SPEED_THRESHOLD_MPS ?? '0.6'),
-    minDistanceIntervalMeters: parseFloat(process.env.MIN_DISTANCE_INTERVAL_M ?? '12'),
+    minDistanceIntervalMeters: parseFloat(process.env.MIN_DISTANCE_INTERVAL_M ?? '15'),
     maxTeleportSpeedMps: parseFloat(process.env.MAX_TELEPORT_SPEED_MPS ?? '55'),
     stopRadiusMeters: parseFloat(process.env.STOP_RADIUS_M ?? '40'),
     stopMinDurationSeconds: parseInt(process.env.STOP_MIN_DURATION_SEC ?? '180', 10),

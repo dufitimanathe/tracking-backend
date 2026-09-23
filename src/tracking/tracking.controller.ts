@@ -20,6 +20,7 @@ import { successResponse } from '../common/dto/api-response.dto';
 import { UserRole } from '../common/enums';
 import { CreateGeofenceDto } from './dto/create-geofence.dto';
 import { LocationBatchDto } from './dto/location-batch.dto';
+import { LocationLiteDto } from './dto/location-lite.dto';
 import { LocationUpdateDto } from './dto/location-update.dto';
 import { StartTrackingDto } from './dto/start-tracking.dto';
 import { UpdateGeofenceDto } from './dto/update-geofence.dto';
@@ -60,6 +61,12 @@ export class TrackingController {
   ) {
     const session = await this.sessionsService.end(user.id, sessionId);
     return successResponse(session);
+  }
+
+  @Post('tracking/location')
+  async ingestLite(@CurrentUser() user: AuthUser, @Body() dto: LocationLiteDto) {
+    await this.ingestionService.ingestLite(user.id, dto);
+    return successResponse({ accepted: true });
   }
 
   @Post('tracking/locations')

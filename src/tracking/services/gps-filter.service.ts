@@ -42,6 +42,7 @@ export class GpsFilterService {
       longitude: number;
       capturedAt: Date;
       clientLocationId?: string | null;
+      accuracy?: number | null;
     } | null,
   ): { accepted: true; value: AcceptedLocationSample } | { accepted: false; reason: GpsRejectReason } {
     const { latitude, longitude, accuracy, capturedAt, clientLocationId } = sample;
@@ -58,7 +59,7 @@ export class GpsFilterService {
       return { accepted: false, reason: 'INVALID_COORDINATES' };
     }
 
-    // Later pings: reject poor accuracy. First session fix always allowed so live map gets a pin.
+    // Later pings: reject only unusable fixes (>500 m). First session fix always allowed.
     if (
       previous &&
       accuracy != null &&
@@ -95,10 +96,23 @@ export class GpsFilterService {
         (capturedAt.getTime() - previous.capturedAt.getTime()) / 1000,
         0.001,
       );
+      const elapsedMs = elapsedSec * 1000;
+
+      // Keep a recent good pin when the new reading is much worse.
+      const prevAccuracy = previous.accuracy ?? null;
+      if (
+        prevAccuracy != null &&
+        accuracy != null &&
+        elapsedMs < 30_000 &&
+        prevAccuracy <= 80 &&
+        (accuracy > prevAccuracy * 2 || accuracy > 200)
+      ) {
+        return { accepted: false, reason: 'POOR_ACCURACY' };
+      }
 
       if (
         distanceFromPreviousMeters < tracking.minDistanceIntervalMeters &&
-        elapsedSec < 20
+        elapsedSec < 15
       ) {
         return { accepted: false, reason: 'TOO_CLOSE' };
       }

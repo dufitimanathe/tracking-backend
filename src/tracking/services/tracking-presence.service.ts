@@ -25,8 +25,9 @@ export interface LiveDriverState {
   riderName?: string | null;
   phone?: string | null;
   plateNumber?: string | null;
-  /** Reverse-geocoded place label for the live pin. */
   placeName?: string | null;
+  /** ACTIVE while receiving pings; STALE when overdue; STOPPED when parked/ended. */
+  sessionHealth?: 'ACTIVE' | 'STALE' | 'STOPPED' | null;
 }
 
 @Injectable()
@@ -61,6 +62,18 @@ export class TrackingPresenceService {
     if (ageSec <= t.presenceDelayedSeconds) return TrackingPresenceState.DELAYED;
     if (ageSec <= t.presenceStaleSeconds) return TrackingPresenceState.STALE;
     return TrackingPresenceState.OFFLINE;
+  }
+
+  /** Coarse health for admin UI aligned to sparse ~10 min sharing. */
+  computeSessionHealth(
+    capturedAt: Date,
+    now = new Date(),
+  ): 'ACTIVE' | 'STALE' | 'STOPPED' {
+    const ageSec = Math.max(0, (now.getTime() - capturedAt.getTime()) / 1000);
+    const t = this.cfg();
+    // ACTIVE within delayed window (~25 min default); else STALE until cleared.
+    if (ageSec <= t.presenceDelayedSeconds) return 'ACTIVE';
+    return 'STALE';
   }
 
   async setLiveState(state: LiveDriverState): Promise<void> {

@@ -12,6 +12,7 @@ import {
 import { DomainException } from '../../common/exceptions/domain.exception';
 import { toPointGeoJson } from '../../common/utils/geo.util';
 import { MotorcycleCurrentLocation } from '../../locations/entities/motorcycle-current-location.entity';
+import { LocationPing } from '../../locations/entities/location-ping.entity';
 import { Motorcycle } from '../../motorcycles/entities/motorcycle.entity';
 import { REALTIME_EVENTS } from '../../realtime/realtime.constants';
 import { RealtimeService } from '../../realtime/realtime.service';
@@ -23,6 +24,7 @@ import { TrackingSession } from '../entities/tracking-session.entity';
 import { DistanceService } from './distance.service';
 import { ReverseGeocodingService } from './reverse-geocoding.service';
 import { TrackingPresenceService } from './tracking-presence.service';
+import { TrackingRetentionService } from './tracking-retention.service';
 
 @Injectable()
 export class TrackingSessionsService {
@@ -37,12 +39,15 @@ export class TrackingSessionsService {
     private readonly motorcycleRepository: Repository<Motorcycle>,
     @InjectRepository(MotorcycleCurrentLocation)
     private readonly currentLocationRepository: Repository<MotorcycleCurrentLocation>,
+    @InjectRepository(LocationPing)
+    private readonly pingRepository: Repository<LocationPing>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     private readonly realtimeService: RealtimeService,
     private readonly presenceService: TrackingPresenceService,
     private readonly distanceService: DistanceService,
     private readonly reverseGeocoding: ReverseGeocodingService,
+    private readonly retentionService: TrackingRetentionService,
   ) {}
 
   async resolveActiveRider(userId: string): Promise<Rider> {
@@ -181,6 +186,27 @@ export class TrackingSessionsService {
         session.endLongitude,
         now,
       );
+    }
+
+    // Compact day's pings off the hot path (not on every lite upload).
+    try {
+      const lastPing = await this.pingRepository.findOne({
+        where: {
+          companyId: session.companyId,
+          motorcycleId: session.motorcycleId,
+        },
+        order: { recordedAt: 'DESC' },
+      });
+      if (lastPing) {
+        await this.retentionService.compactDayForMotorcycle(
+          session.companyId,
+          session.motorcycleId,
+          now,
+          lastPing.id,
+        );
+      }
+    } catch {
+      // Best-effort cleanup
     }
 
     this.realtimeService.emitToCompany(
