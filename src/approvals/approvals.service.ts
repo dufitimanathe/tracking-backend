@@ -125,13 +125,13 @@ export class ApprovalsService {
       return trip.id;
     });
 
-    await this.dispatchService.startAutomaticDispatch(tripId);
-
     await this.whatsappStatusNotifier.notifyRequestStatus(
       companyId,
       requestId,
       'Approved — searching for a rider',
     );
+
+    await this.dispatchService.startAutomaticDispatch(tripId);
 
     const approval = await this.approvalRepository.findOne({
       where: { requestId, companyId, action: ApprovalAction.APPROVED },

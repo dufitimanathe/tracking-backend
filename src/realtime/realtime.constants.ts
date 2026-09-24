@@ -5,6 +5,7 @@ export const REALTIME_EVENTS = {
   TRIP_STATUS_UPDATED: 'trip.status.updated',
   INCIDENT_CREATED: 'incident.created',
   NOTIFICATION_CREATED: 'notification.created',
+  TRIP_OFFER: 'trip.offer',
   TRACKING_DRIVER_LOCATION: 'tracking.driver-location',
   TRACKING_DRIVER_STATUS: 'tracking.driver-status',
   TRACKING_SESSION_STARTED: 'tracking.session-started',

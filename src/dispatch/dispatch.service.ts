@@ -4,7 +4,7 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Queue } from 'bullmq';
 import Redis from 'ioredis';
-import { DataSource, In, Repository } from 'typeorm';
+import { DataSource, In, Not, Repository } from 'typeorm';
 import {
   ConflictDomainException,
   NotFoundDomainException,
@@ -13,26 +13,26 @@ import {
   AssignmentMethod,
   ErrorCode,
   RiderAvailabilityStatus,
+  RiderStatus,
+  MotorcycleStatus,
   TransportRequestStatus,
   TripEventType,
   TripStatus,
 } from '../common/enums';
 import { Motorcycle } from '../motorcycles/entities/motorcycle.entity';
 import { Rider } from '../riders/entities/rider.entity';
+import { RiderMotorcycleAssignment } from '../rider-motorcycle-assignments/entities/rider-motorcycle-assignment.entity';
 import { TransportRequest } from '../transport-requests/entities/transport-request.entity';
 import { TripEventsService } from '../trip-events/trip-events.service';
 import { Trip } from '../trips/entities/trip.entity';
 import { assertTransition } from '../trips/trip-state-machine';
 import { REDIS_CLIENT } from '../common/redis/redis.constants';
 import { User } from '../users/entities/user.entity';
-import {
-  DISPATCH_QUEUE,
-  DISPATCH_TIMEOUT_JOB,
-  dispatchCandidatesKey,
-} from './dispatch.constants';
+import { DISPATCH_QUEUE, DISPATCH_TIMEOUT_JOB, dispatchCandidatesKey } from './dispatch.constants';
 import { AssignmentAttempt } from './entities/assignment-attempt.entity';
 import { RiderMatchCandidate, RiderMatchingService } from './rider-matching.service';
 import { WhatsAppStatusNotifierService } from '../whatsapp/whatsapp-status-notifier.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 export interface AssignmentCandidateDto {
   rank: number;
@@ -41,13 +41,14 @@ export interface AssignmentCandidateDto {
   riderName: string;
   riderPhone: string;
   plateNumber: string;
-  distanceMeters: number;
+  distanceMeters?: number;
   durationSeconds?: number;
   etaMinutes?: number;
   latitude?: number;
   longitude?: number;
   locationAgeSeconds?: number;
   recommended: boolean;
+  locationStale: boolean;
 }
 
 export interface AssignmentRecommendationsDto {
@@ -58,6 +59,8 @@ export interface AssignmentRecommendationsDto {
   pickupLongitude: number;
   recommendedRiderId?: string;
   candidates: AssignmentCandidateDto[];
+  searchRadiusMeters: number;
+  automaticLocationMaxAgeSeconds: number;
 }
 
 @Injectable()
@@ -86,11 +89,11 @@ export class DispatchService {
     @Inject(REDIS_CLIENT)
     private readonly redis: Redis,
     private readonly whatsappStatusNotifier: WhatsAppStatusNotifierService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   /**
-   * Rank nearest AVAILABLE riders for admin assignment UI.
-   * Uses PostGIS shortlist + Google Distance Matrix when configured.
+   * Include every eligible rider; old or missing GPS must not prevent manual dispatch.
    */
   async getAssignmentRecommendations(
     companyId: string,
@@ -101,25 +104,14 @@ export class DispatchService {
       throw new NotFoundDomainException('Trip not found.');
     }
 
-    const radiusMeters = this.configService.get<number>('app.ops.riderSearchRadiusMeters', {
-      infer: true,
-    })!;
-    const adminMaxAge = this.configService.get<number>(
-      'app.ops.adminRiderLocationMaxAgeSeconds',
-      { infer: true },
-    )!;
-
-    const ranked = await this.riderMatchingService.findAndRankCandidates(
+    const ranked = await this.riderMatchingService.findManualCandidates(
       companyId,
       trip.pickupLatitude,
       trip.pickupLongitude,
-      radiusMeters,
-      undefined,
-      { maxAgeSeconds: adminMaxAge },
     );
 
-    const riderIds = ranked.candidates.map((c) => c.riderId);
-    const motorcycleIds = ranked.candidates.map((c) => c.motorcycleId);
+    const riderIds = ranked.map((c) => c.riderId);
+    const motorcycleIds = ranked.map((c) => c.motorcycleId);
 
     const [riders, motorcycles] = await Promise.all([
       riderIds.length
@@ -139,13 +131,13 @@ export class DispatchService {
     const motoMap = new Map(motorcycles.map((m) => [m.id, m]));
     const userMap = new Map(users.map((u) => [u.id, u]));
 
-    const candidates: AssignmentCandidateDto[] = ranked.candidates.map((c, index) => {
+    const candidates: AssignmentCandidateDto[] = ranked.map((c, index) => {
       const rider = riderMap.get(c.riderId);
       const user = rider?.userId ? userMap.get(rider.userId) : undefined;
       const moto = motoMap.get(c.motorcycleId);
       const riderName = user
         ? `${user.firstName} ${user.lastName}`.trim()
-        : rider?.phone ?? 'Rider';
+        : (rider?.phone ?? 'Rider');
       return {
         rank: index + 1,
         riderId: c.riderId,
@@ -153,26 +145,48 @@ export class DispatchService {
         riderName,
         riderPhone: rider?.phone ?? '',
         plateNumber: moto?.plateNumber ?? '',
-        distanceMeters: Math.round(c.distanceMeters),
+        distanceMeters: c.distanceMeters == null ? undefined : Math.round(c.distanceMeters),
         durationSeconds: c.durationSeconds,
         etaMinutes:
           c.durationSeconds != null ? Math.max(1, Math.round(c.durationSeconds / 60)) : undefined,
         latitude: c.latitude,
         longitude: c.longitude,
         locationAgeSeconds: c.locationAgeSeconds,
-        recommended: index === 0,
+        recommended: index === 0 && c.distanceMeters != null,
+        locationStale: false,
       };
     });
 
     return {
       tripId: trip.id,
-      method: ranked.method,
+      method: AssignmentMethod.MANUAL,
       pickupAddress: trip.pickupAddress,
       pickupLatitude: trip.pickupLatitude,
       pickupLongitude: trip.pickupLongitude,
-      recommendedRiderId: candidates[0]?.riderId,
+      recommendedRiderId: candidates.find((c) => c.recommended)?.riderId,
       candidates,
+      searchRadiusMeters: 0,
+      automaticLocationMaxAgeSeconds: 0,
     };
+  }
+
+  async assignNearest(companyId: string, tripId: string, actorId: string): Promise<Trip> {
+    const recommendations = await this.getAssignmentRecommendations(companyId, tripId);
+    const nearest = recommendations.candidates.find((c) => c.recommended);
+    if (!nearest) {
+      throw new ConflictDomainException(
+        ErrorCode.NO_RIDER_AVAILABLE,
+        'No available rider has a known location. Choose a rider manually.',
+      );
+    }
+    return this.manualAssign(
+      companyId,
+      tripId,
+      nearest.riderId,
+      nearest.motorcycleId,
+      'Admin assigned nearest available rider using last-known location',
+      actorId,
+    );
   }
 
   async startAutomaticDispatch(tripId: string): Promise<void> {
@@ -185,19 +199,23 @@ export class DispatchService {
       return;
     }
 
-    const radiusMeters = this.configService.get<number>(
-      'app.ops.riderSearchRadiusMeters',
-      { infer: true },
-    )!;
-
-    const ranked = await this.riderMatchingService.findAndRankCandidates(
+    // Nearest available driver by last-known GPS — no search-radius / freshness gate.
+    const ranked = await this.riderMatchingService.findManualCandidates(
       trip.companyId,
       trip.pickupLatitude,
       trip.pickupLongitude,
-      radiusMeters,
     );
-
-    const candidates = ranked.candidates;
+    const candidates = ranked
+      .filter((c): c is typeof c & { distanceMeters: number } => c.distanceMeters != null)
+      .map((c) => ({
+        riderId: c.riderId,
+        motorcycleId: c.motorcycleId,
+        distanceMeters: c.distanceMeters,
+        durationSeconds: c.durationSeconds,
+        latitude: c.latitude,
+        longitude: c.longitude,
+        locationAgeSeconds: c.locationAgeSeconds,
+      }));
 
     await this.assignmentAttemptRepository.save(
       this.assignmentAttemptRepository.create({
@@ -213,22 +231,13 @@ export class DispatchService {
         })),
         selectedRiderId: candidates[0]?.riderId ?? null,
         selectedMotorcycleId: candidates[0]?.motorcycleId ?? null,
-        method: ranked.method,
+        method: AssignmentMethod.MANUAL,
         reason:
           candidates.length === 0
-            ? 'No fresh GPS candidates'
-            : ranked.method === AssignmentMethod.POSTGIS_FALLBACK
-              ? 'Route Matrix unavailable; PostGIS order used'
-              : 'Route Matrix ranked',
+            ? 'No available riders with a known location'
+            : 'Nearest available rider by last-known GPS',
         success: candidates.length > 0,
       }),
-    );
-
-    await this.redis.set(
-      dispatchCandidatesKey(tripId),
-      JSON.stringify(candidates),
-      'EX',
-      3600,
     );
 
     if (candidates.length === 0) {
@@ -270,8 +279,8 @@ export class DispatchService {
     await this.startAutomaticDispatch(trip.id);
   }
 
-  async handleOfferTimeout(tripId: string, riderId: string): Promise<void> {
-    await this.dataSource.transaction(async (manager) => {
+  async handleOfferTimeout(tripId: string, riderId: string, assignedAt?: string): Promise<void> {
+    const expired = await this.dataSource.transaction(async (manager) => {
       const tripRepo = manager.getRepository(Trip);
       const riderRepo = manager.getRepository(Rider);
 
@@ -286,7 +295,8 @@ export class DispatchService {
 
       if (
         trip.status !== TripStatus.RIDER_ASSIGNED ||
-        trip.riderId !== riderId
+        trip.riderId !== riderId ||
+        (assignedAt != null && trip.assignedAt?.toISOString() !== assignedAt)
       ) {
         return;
       }
@@ -311,8 +321,14 @@ export class DispatchService {
       trip.motorcycleId = null;
       trip.assignedAt = null;
       await tripRepo.save(trip);
+      return true;
     });
 
+    if (!expired) return;
+    await this.continueDispatch(tripId);
+  }
+
+  async continueDispatch(tripId: string): Promise<void> {
     const remaining = await this.popCandidateQueue(tripId);
     const trip = await this.tripRepository.findOne({ where: { id: tripId } });
     if (!trip || trip.status !== TripStatus.SEARCHING_RIDER) {
@@ -335,7 +351,8 @@ export class DispatchService {
     reason?: string,
     actorId?: string,
   ): Promise<Trip> {
-    return this.dataSource.transaction(async (manager) => {
+    let newlyAssigned = false;
+    const assignedTrip = await this.dataSource.transaction(async (manager) => {
       const tripRepo = manager.getRepository(Trip);
       const riderRepo = manager.getRepository(Rider);
       const requestRepo = manager.getRepository(TransportRequest);
@@ -377,12 +394,53 @@ export class DispatchService {
       }
 
       if (
-        rider.availabilityStatus !== RiderAvailabilityStatus.AVAILABLE &&
-        rider.availabilityStatus !== RiderAvailabilityStatus.RESERVED
+        rider.status !== RiderStatus.ACTIVE ||
+        (rider.availabilityStatus !== RiderAvailabilityStatus.AVAILABLE &&
+          !(trip.riderId === riderId && trip.status === TripStatus.RIDER_ASSIGNED))
       ) {
         throw new ConflictDomainException(
           ErrorCode.RIDER_NOT_AVAILABLE,
           'Rider is not available for assignment.',
+        );
+      }
+
+      const assignment = await manager.getRepository(RiderMotorcycleAssignment).findOne({
+        where: { companyId, riderId, active: true },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!assignment || (motorcycleId && motorcycleId !== assignment.motorcycleId)) {
+        throw new ConflictDomainException(
+          ErrorCode.MOTORCYCLE_NOT_AVAILABLE,
+          'Rider must have an active assignment to the selected motorcycle.',
+        );
+      }
+      const motorcycle = await manager.getRepository(Motorcycle).findOne({
+        where: { id: assignment.motorcycleId, companyId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!motorcycle || motorcycle.status !== MotorcycleStatus.ACTIVE) {
+        throw new ConflictDomainException(
+          ErrorCode.MOTORCYCLE_NOT_AVAILABLE,
+          'The assigned motorcycle is not active.',
+        );
+      }
+      const activeStatuses = In([
+        TripStatus.RIDER_ASSIGNED,
+        TripStatus.RIDER_ACCEPTED,
+        TripStatus.RIDER_TO_PICKUP,
+        TripStatus.RIDER_ARRIVED,
+        TripStatus.IN_PROGRESS,
+      ]);
+      const busy = await tripRepo.exists({
+        where: [
+          { companyId, id: Not(tripId), riderId, status: activeStatuses },
+          { companyId, id: Not(tripId), motorcycleId: motorcycle.id, status: activeStatuses },
+        ],
+      });
+      if (busy) {
+        throw new ConflictDomainException(
+          ErrorCode.RIDER_NOT_AVAILABLE,
+          'Rider or motorcycle is already assigned to another trip.',
         );
       }
 
@@ -406,9 +464,10 @@ export class DispatchService {
       assertTransition(trip.status, TripStatus.RIDER_ASSIGNED);
       trip.status = TripStatus.RIDER_ASSIGNED;
       trip.riderId = riderId;
-      trip.motorcycleId = motorcycleId ?? trip.motorcycleId ?? null;
+      trip.motorcycleId = motorcycle.id;
       trip.assignedAt = new Date();
       await tripRepo.save(trip);
+      newlyAssigned = true;
 
       rider.availabilityStatus = RiderAvailabilityStatus.ASSIGNED;
       await riderRepo.save(rider);
@@ -416,7 +475,7 @@ export class DispatchService {
       const request = await requestRepo.findOne({
         where: { id: trip.transportRequestId, companyId },
       });
-      if (request && request.status === TransportRequestStatus.DISPATCHING) {
+      if (request) {
         request.status = TransportRequestStatus.ASSIGNED;
         await requestRepo.save(request);
       }
@@ -443,9 +502,16 @@ export class DispatchService {
         { riderId, motorcycleId: trip.motorcycleId, reason, manual: true },
       );
 
-      await this.scheduleOfferTimeout(trip.id, riderId);
       return trip;
     });
+    await this.redis.del(dispatchCandidatesKey(tripId));
+    // Drop any auto-dispatch timeouts so a lagging "no rider" job cannot fire after admin assign.
+    await this.cancelPendingOfferTimeouts(tripId);
+    if (newlyAssigned) {
+      await this.scheduleOfferTimeout(assignedTrip.id, riderId, assignedTrip.assignedAt!);
+      await this.notificationsService.notifyRiderTripOffer(assignedTrip);
+    }
+    return assignedTrip;
   }
 
   async reassign(
@@ -456,14 +522,7 @@ export class DispatchService {
     reason?: string,
     actorId?: string,
   ): Promise<Trip> {
-    const trip = await this.manualAssign(
-      companyId,
-      tripId,
-      riderId,
-      motorcycleId,
-      reason,
-      actorId,
-    );
+    const trip = await this.manualAssign(companyId, tripId, riderId, motorcycleId, reason, actorId);
 
     await this.tripEventsService.appendEvent(
       companyId,
@@ -481,14 +540,8 @@ export class DispatchService {
     candidate: RiderMatchCandidate,
     remainingCandidates: RiderMatchCandidate[],
   ): Promise<void> {
-    await this.redis.set(
-      dispatchCandidatesKey(trip.id),
-      JSON.stringify(remainingCandidates),
-      'EX',
-      3600,
-    );
-
     let offered = false;
+    let assignedAt: Date | undefined;
 
     await this.dataSource.transaction(async (manager) => {
       const tripRepo = manager.getRepository(Trip);
@@ -510,18 +563,64 @@ export class DispatchService {
       });
 
       // Skip to next when rider no longer AVAILABLE (fixes previous silent gap)
-      if (!rider || rider.availabilityStatus !== RiderAvailabilityStatus.AVAILABLE) {
+      if (
+        !rider ||
+        rider.status !== RiderStatus.ACTIVE ||
+        rider.availabilityStatus !== RiderAvailabilityStatus.AVAILABLE
+      ) {
         this.logger.debug(
           `Skipping rider ${candidate.riderId} — not AVAILABLE for trip ${trip.id}`,
         );
         return;
       }
 
+      const assignment = await manager.getRepository(RiderMotorcycleAssignment).findOne({
+        where: {
+          companyId: trip.companyId,
+          riderId: rider.id,
+          motorcycleId: candidate.motorcycleId,
+          active: true,
+        },
+        lock: { mode: 'pessimistic_write' },
+      });
+      const motorcycle = await manager.getRepository(Motorcycle).findOne({
+        where: { id: candidate.motorcycleId, companyId: trip.companyId },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!assignment || motorcycle?.status !== MotorcycleStatus.ACTIVE) return;
+      const busyStatuses = In([
+        TripStatus.RIDER_ASSIGNED,
+        TripStatus.RIDER_ACCEPTED,
+        TripStatus.RIDER_TO_PICKUP,
+        TripStatus.RIDER_ARRIVED,
+        TripStatus.IN_PROGRESS,
+      ]);
+      if (
+        await tripRepo.exists({
+          where: [
+            {
+              companyId: trip.companyId,
+              id: Not(trip.id),
+              riderId: rider.id,
+              status: busyStatuses,
+            },
+            {
+              companyId: trip.companyId,
+              id: Not(trip.id),
+              motorcycleId: motorcycle.id,
+              status: busyStatuses,
+            },
+          ],
+        })
+      )
+        return;
+
       assertTransition(lockedTrip.status, TripStatus.RIDER_ASSIGNED);
       lockedTrip.status = TripStatus.RIDER_ASSIGNED;
       lockedTrip.riderId = candidate.riderId;
       lockedTrip.motorcycleId = candidate.motorcycleId;
       lockedTrip.assignedAt = new Date();
+      assignedAt = lockedTrip.assignedAt;
       await tripRepo.save(lockedTrip);
 
       // Reserve until rider accepts (accept path sets ASSIGNED)
@@ -550,6 +649,12 @@ export class DispatchService {
         },
       );
 
+      await this.redis.set(
+        dispatchCandidatesKey(trip.id),
+        JSON.stringify(remainingCandidates),
+        'EX',
+        3600,
+      );
       offered = true;
     });
 
@@ -565,19 +670,26 @@ export class DispatchService {
       return;
     }
 
-    if (trip.transportRequestId) {
-      await this.whatsappStatusNotifier.notifyRequestStatus(
-        trip.companyId,
-        trip.transportRequestId,
-        'Rider assigned — waiting for acceptance',
-      );
+    const latest = await this.tripRepository.findOne({ where: { id: trip.id } });
+    if (
+      latest?.status === TripStatus.RIDER_ASSIGNED &&
+      latest.riderId === candidate.riderId
+    ) {
+      if (trip.transportRequestId) {
+        await this.whatsappStatusNotifier.notifyRequestStatus(
+          trip.companyId,
+          trip.transportRequestId,
+          'Rider assigned — waiting for acceptance',
+        );
+      }
+      await this.notificationsService.notifyRiderTripOffer(latest);
     }
 
-    await this.scheduleOfferTimeout(trip.id, candidate.riderId);
+    await this.scheduleOfferTimeout(trip.id, candidate.riderId, assignedAt!);
   }
 
   private async markNoRiderAvailable(trip: Trip): Promise<void> {
-    await this.dataSource.transaction(async (manager) => {
+    const changed = await this.dataSource.transaction(async (manager) => {
       const tripRepo = manager.getRepository(Trip);
       const requestRepo = manager.getRepository(TransportRequest);
 
@@ -590,33 +702,84 @@ export class DispatchService {
         return;
       }
 
+      const request = await requestRepo.findOne({
+        where: { id: lockedTrip.transportRequestId, companyId: trip.companyId },
+      });
+      // Admin assign may have won the race on the request row already.
+      if (request?.status === TransportRequestStatus.ASSIGNED) {
+        return;
+      }
+
       assertTransition(lockedTrip.status, TripStatus.NO_RIDER_AVAILABLE);
       lockedTrip.status = TripStatus.NO_RIDER_AVAILABLE;
       await tripRepo.save(lockedTrip);
 
-      const request = await requestRepo.findOne({
-        where: { id: lockedTrip.transportRequestId, companyId: trip.companyId },
-      });
       if (request) {
-        request.status = TransportRequestStatus.CANCELLED;
+        request.status = TransportRequestStatus.DISPATCHING;
         await requestRepo.save(request);
       }
+      return true;
     });
 
+    if (!changed) return;
     await this.redis.del(dispatchCandidatesKey(trip.id));
+
+    // Admin may have assigned between the status write and this notify — never
+    // send a lagging "no rider" WhatsApp after a successful assignment.
+    const latest = await this.tripRepository.findOne({ where: { id: trip.id } });
+    if (!latest || latest.status !== TripStatus.NO_RIDER_AVAILABLE || latest.riderId) {
+      this.logger.debug(
+        `Skipping no-rider WhatsApp for trip ${trip.id}; status=${latest?.status} riderId=${latest?.riderId}`,
+      );
+      return;
+    }
+
+    await this.whatsappStatusNotifier.notifyRequestStatus(
+      trip.companyId,
+      trip.transportRequestId,
+      'No rider could be assigned automatically - awaiting admin assignment',
+    );
   }
 
-  private async scheduleOfferTimeout(tripId: string, riderId: string): Promise<void> {
-    const timeoutSeconds = this.configService.get<number>(
-      'app.ops.dispatchOfferTimeoutSeconds',
-      { infer: true },
-    )!;
+  private async cancelPendingOfferTimeouts(tripId: string): Promise<void> {
+    try {
+      const jobs = await this.dispatchQueue.getJobs(['delayed', 'waiting', 'prioritized']);
+      await Promise.all(
+        jobs
+          .filter(
+            (job) =>
+              job.name === DISPATCH_TIMEOUT_JOB &&
+              (job.data as { tripId?: string } | undefined)?.tripId === tripId,
+          )
+          .map(async (job) => {
+            try {
+              await job.remove();
+            } catch {
+              // Job may already be active or removed.
+            }
+          }),
+      );
+    } catch (error) {
+      this.logger.warn(`Failed to cancel offer timeouts for trip ${tripId}: ${String(error)}`);
+    }
+  }
+
+  private async scheduleOfferTimeout(
+    tripId: string,
+    riderId: string,
+    assignedAt: Date,
+  ): Promise<void> {
+    const timeoutSeconds =
+      this.configService.get<number>('app.ops.dispatchOfferTimeoutSeconds', { infer: true }) ?? 45;
+
+    // BullMQ custom jobIds must not contain ':' (Redis key separator).
+    const jobId = `offer-${tripId}-${riderId}-${assignedAt.getTime()}`;
 
     await this.dispatchQueue.add(
       DISPATCH_TIMEOUT_JOB,
-      { tripId, riderId },
+      { tripId, riderId, assignedAt: assignedAt.toISOString() },
       {
-        jobId: `${tripId}:${riderId}`,
+        jobId,
         delay: timeoutSeconds * 1000,
         removeOnComplete: true,
         removeOnFail: 100,

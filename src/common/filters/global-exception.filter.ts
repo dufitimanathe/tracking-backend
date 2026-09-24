@@ -42,11 +42,11 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       if (typeof body === 'object' && body !== null) {
         const typed = body as {
           success?: boolean;
-          error?: { code?: string; message?: string; details?: unknown };
+          error?: string | { code?: string; message?: string; details?: unknown };
           message?: string | string[];
           code?: string;
         };
-        if (typed.error) {
+        if (typed.error && typeof typed.error === 'object') {
           code = typed.error.code ?? code;
           message = typed.error.message ?? message;
           details = typed.error.details;

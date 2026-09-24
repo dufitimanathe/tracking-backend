@@ -47,12 +47,26 @@ export class CompanyAccessGuard implements CanActivate {
       );
     }
 
-    if (company.status === CompanyStatus.SUSPENDED) {
-      throw new DomainException(
-        ErrorCode.FORBIDDEN,
-        'This company is suspended.',
-        HttpStatus.FORBIDDEN,
-      );
+    if (
+      company.status === CompanyStatus.SUSPENDED ||
+      company.status === CompanyStatus.REJECTED
+    ) {
+      const platformCheck = await this.companyMemberRepository.findOne({
+        where: {
+          userId: request.user.id,
+          role: UserRole.PLATFORM_ADMIN,
+          status: MembershipStatus.ACTIVE,
+        },
+      });
+      if (!platformCheck) {
+        throw new DomainException(
+          ErrorCode.FORBIDDEN,
+          company.status === CompanyStatus.SUSPENDED
+            ? 'This company is suspended.'
+            : 'This company registration was rejected.',
+          HttpStatus.FORBIDDEN,
+        );
+      }
     }
 
     const platformAdminMembership = await this.companyMemberRepository.findOne({

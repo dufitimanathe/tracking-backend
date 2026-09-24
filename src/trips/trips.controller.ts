@@ -154,6 +154,18 @@ export class TripsController {
     return successResponse(recommendations);
   }
 
+  @Post('companies/:companyId/trips/:id/assign-nearest')
+  @CompanyScoped()
+  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR)
+  @ApiSuccessResponse(TripResponseDto)
+  async assignNearest(
+    @Param('companyId', ParseUUIDPipe) companyId: string,
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return successResponse(await this.tripsService.assignNearest(companyId, id, user));
+  }
+
   @Post('companies/:companyId/trips/:id/redispatch')
   @CompanyScoped()
   @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR)

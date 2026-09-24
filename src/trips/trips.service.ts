@@ -1,4 +1,5 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 import { AuthUser } from '../common/decorators/current-user.decorator';
@@ -71,6 +72,7 @@ export class TripsService {
     private readonly notificationsService: NotificationsService,
     private readonly whatsappStatusNotifier: WhatsAppStatusNotifierService,
     private readonly mapsService: MapsService,
+    private readonly configService: ConfigService,
   ) {}
 
   async getAssignmentCandidates(
@@ -279,7 +281,7 @@ export class TripsService {
       await tripRepo.save(lockedTrip);
     });
 
-    await this.dispatchService.startAutomaticDispatch(tripId);
+    await this.dispatchService.continueDispatch(tripId);
     const trip = await this.findByIdOrFail(companyId, tripId);
     return TripResponseDto.fromEntity(trip);
   }
@@ -411,7 +413,8 @@ export class TripsService {
         lock: { mode: 'pessimistic_write' },
       });
       if (lockedRider) {
-        lockedRider.availabilityStatus = RiderAvailabilityStatus.AVAILABLE;
+        // Completing the company trip does not mean the rider is free for another one.
+        lockedRider.availabilityStatus = RiderAvailabilityStatus.AWAITING_AVAILABILITY;
         await riderRepo.save(lockedRider);
       }
 
@@ -436,7 +439,11 @@ export class TripsService {
     });
 
     await this.billingService.createForCompletedTrip(trip.id);
-    await this.notifyRiderTripUpdate(trip, 'Trip completed', NotificationType.TRIP_COMPLETED);
+    await this.notifyRiderTripUpdate(
+      trip,
+      'Trip completed. Tap Ready for another ride when you are free.',
+      NotificationType.TRIP_COMPLETED,
+    );
     await this.notifyEmployeeWhatsApp(trip, 'Trip completed. Thank you!');
 
     return TripResponseDto.fromEntity(trip);
@@ -474,6 +481,12 @@ export class TripsService {
       dto.reason,
       actor.id,
     );
+    await this.notifyEmployeeRiderAssigned(trip);
+    return TripResponseDto.fromEntity(trip);
+  }
+
+  async assignNearest(companyId: string, tripId: string, actor: AuthUser): Promise<TripResponseDto> {
+    const trip = await this.dispatchService.assignNearest(companyId, tripId, actor.id);
     await this.notifyEmployeeRiderAssigned(trip);
     return TripResponseDto.fromEntity(trip);
   }
@@ -709,7 +722,10 @@ export class TripsService {
     let distanceMeters: number | undefined;
     const originLat = rider.currentLatitude;
     const originLng = rider.currentLongitude;
-    if (originLat != null && originLng != null) {
+    const maxAge = this.configService.get<number>('app.ops.riderLocationMaxAgeSeconds') ?? 60;
+    const freshLocation = rider.locationUpdatedAt != null &&
+      Date.now() - rider.locationUpdatedAt.getTime() <= maxAge * 1000;
+    if (freshLocation && originLat != null && originLng != null) {
       try {
         const route = await this.mapsService.calculateRoute(
           { lat: Number(originLat), lng: Number(originLng) },

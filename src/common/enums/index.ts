@@ -1,7 +1,22 @@
 export enum CompanyStatus {
+  PENDING_REVIEW = 'PENDING_REVIEW',
   ACTIVE = 'ACTIVE',
   SUSPENDED = 'SUSPENDED',
   INACTIVE = 'INACTIVE',
+  REJECTED = 'REJECTED',
+}
+
+export enum CompanyDocumentType {
+  BUSINESS_REGISTRATION = 'BUSINESS_REGISTRATION',
+  TAX_CLEARANCE = 'TAX_CLEARANCE',
+  DIRECTOR_ID = 'DIRECTOR_ID',
+  OTHER = 'OTHER',
+}
+
+export enum CompanyDocumentStatus {
+  SUBMITTED = 'SUBMITTED',
+  APPROVED = 'APPROVED',
+  REJECTED = 'REJECTED',
 }
 
 export enum UserStatus {
@@ -42,6 +57,8 @@ export enum RiderStatus {
 export enum RiderAvailabilityStatus {
   OFFLINE = 'OFFLINE',
   AVAILABLE = 'AVAILABLE',
+  AWAITING_AVAILABILITY = 'AWAITING_AVAILABILITY',
+  BUSY = 'BUSY',
   RESERVED = 'RESERVED',
   ASSIGNED = 'ASSIGNED',
   TO_PICKUP = 'TO_PICKUP',

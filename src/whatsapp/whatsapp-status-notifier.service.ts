@@ -1,9 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { TransportRequestChannel } from '../common/enums';
+import { TransportRequestChannel, TripStatus } from '../common/enums';
 import { Employee } from '../employees/entities/employee.entity';
 import { TransportRequest } from '../transport-requests/entities/transport-request.entity';
+import { Trip } from '../trips/entities/trip.entity';
 import { normalizeWhatsAppLang } from './utils/whatsapp-i18n';
 import { WhatsAppOrchestrationService } from './whatsapp-orchestration.service';
 
@@ -16,6 +17,15 @@ export interface RiderAssignedNotifyDetails {
   language?: string | null;
 }
 
+const TRIP_HAS_RIDER: ReadonlySet<TripStatus> = new Set([
+  TripStatus.RIDER_ASSIGNED,
+  TripStatus.RIDER_ACCEPTED,
+  TripStatus.RIDER_TO_PICKUP,
+  TripStatus.RIDER_ARRIVED,
+  TripStatus.IN_PROGRESS,
+  TripStatus.COMPLETED,
+]);
+
 @Injectable()
 export class WhatsAppStatusNotifierService {
   private readonly logger = new Logger(WhatsAppStatusNotifierService.name);
@@ -25,6 +35,8 @@ export class WhatsAppStatusNotifierService {
     private readonly transportRequestRepository: Repository<TransportRequest>,
     @InjectRepository(Employee)
     private readonly employeeRepository: Repository<Employee>,
+    @InjectRepository(Trip)
+    private readonly tripRepository: Repository<Trip>,
     private readonly orchestration: WhatsAppOrchestrationService,
   ) {}
 
@@ -38,6 +50,13 @@ export class WhatsAppStatusNotifierService {
         where: { id: requestId, companyId },
       });
       if (!request || request.channel !== TransportRequestChannel.WHATSAPP) {
+        return;
+      }
+
+      if (await this.shouldSuppressStaleStatus(companyId, requestId, statusLabel)) {
+        this.logger.debug(
+          `Suppressed stale WhatsApp status for request ${requestId}: ${statusLabel}`,
+        );
         return;
       }
 
@@ -92,6 +111,32 @@ export class WhatsAppStatusNotifierService {
     } catch (error) {
       this.logger.warn(`WhatsApp rider-assigned notify failed: ${String(error)}`);
     }
+  }
+
+  /**
+   * Drop lagging "still searching / no rider" updates once a rider is already on the trip.
+   */
+  private async shouldSuppressStaleStatus(
+    companyId: string,
+    requestId: string,
+    statusLabel: string,
+  ): Promise<boolean> {
+    const lower = statusLabel.toLowerCase();
+    const isSearchingOrNoRider =
+      lower.includes('no rider') ||
+      lower.includes('awaiting admin assignment') ||
+      lower.includes('searching for a rider');
+
+    if (!isSearchingOrNoRider) {
+      return false;
+    }
+
+    const trip = await this.tripRepository.findOne({
+      where: { companyId, transportRequestId: requestId },
+      order: { createdAt: 'DESC' },
+    });
+
+    return !!trip && TRIP_HAS_RIDER.has(trip.status);
   }
 
   private buildAssignedMessage(

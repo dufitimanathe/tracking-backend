@@ -40,6 +40,7 @@ import { RedisModule } from './common/redis/redis.module';
 import { TrackingModule } from './tracking/tracking.module';
 import { IntegrationsModule } from './integrations/integrations.module';
 import { MailModule } from './mail/mail.module';
+import { PlatformModule } from './platform/platform.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { MailModule } from './mail/mail.module';
       validationSchema: envValidationSchema,
     }),
     MailModule,
+    PlatformModule,
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {

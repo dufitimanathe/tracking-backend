@@ -7,6 +7,7 @@ import { DispatchService } from './dispatch.service';
 interface DispatchTimeoutPayload {
   tripId: string;
   riderId: string;
+  assignedAt?: string;
 }
 
 @Processor(DISPATCH_QUEUE)
@@ -23,6 +24,10 @@ export class DispatchProcessor extends WorkerHost {
       return;
     }
 
-    await this.dispatchService.handleOfferTimeout(job.data.tripId, job.data.riderId);
+    await this.dispatchService.handleOfferTimeout(
+      job.data.tripId,
+      job.data.riderId,
+      job.data.assignedAt,
+    );
   }
 }

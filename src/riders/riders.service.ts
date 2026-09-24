@@ -52,6 +52,7 @@ export interface RiderCountFilters {
 const MANUAL_AVAILABILITY_TARGETS = new Set<RiderAvailabilityStatus>([
   RiderAvailabilityStatus.OFFLINE,
   RiderAvailabilityStatus.AVAILABLE,
+  RiderAvailabilityStatus.BUSY,
 ]);
 
 const LOCKED_AVAILABILITY_STATES = new Set<RiderAvailabilityStatus>([
@@ -771,60 +772,68 @@ export class RidersService {
     actor: AuthUser,
     actorRole: UserRole,
   ): Promise<RiderResponseDto> {
-    const rider = await this.getEntityOrThrow(companyId, riderId);
-
-    if (actorRole === UserRole.RIDER && rider.userId !== actor.id) {
-      throw new DomainException(
-        ErrorCode.FORBIDDEN,
-        'Riders can only update their own availability.',
-        HttpStatus.FORBIDDEN,
-      );
-    }
-
-    if (rider.status !== RiderStatus.ACTIVE) {
-      throw new DomainException(
-        ErrorCode.RIDER_NOT_AVAILABLE,
-        'Inactive riders cannot change availability.',
-      );
-    }
-
-    if (LOCKED_AVAILABILITY_STATES.has(rider.availabilityStatus)) {
-      throw new DomainException(
-        ErrorCode.TRIP_INVALID_STATE,
-        'Availability cannot be changed while the rider is assigned to a trip.',
-      );
-    }
-
-    if (!MANUAL_AVAILABILITY_TARGETS.has(dto.availabilityStatus)) {
-      throw new DomainException(
-        ErrorCode.VALIDATION_ERROR,
-        'Only OFFLINE and AVAILABLE availability statuses can be set manually.',
-      );
-    }
-
-    if (dto.availabilityStatus === RiderAvailabilityStatus.AVAILABLE) {
-      const activeAssignment = await this.assignmentRepository.findOne({
-        where: {
-          companyId,
-          riderId: rider.id,
-          active: true,
-        },
+    // Use the same row lock as dispatch, so a late tap cannot overwrite a new assignment.
+    const saved = await this.dataSource.transaction(async (manager) => {
+      const riderRepo = manager.getRepository(Rider);
+      const rider = await riderRepo.findOne({
+        where: { id: riderId, companyId },
+        lock: { mode: 'pessimistic_write' },
       });
+      if (!rider) throw new NotFoundDomainException('Rider not found.');
 
-      if (!activeAssignment) {
+      if (actorRole === UserRole.RIDER && rider.userId !== actor.id) {
         throw new DomainException(
-          ErrorCode.MOTORCYCLE_NOT_AVAILABLE,
-          'Rider must have an active motorcycle assignment (phone tracking unit) before going available.',
+          ErrorCode.FORBIDDEN,
+          'Riders can only update their own availability.',
+          HttpStatus.FORBIDDEN,
         );
       }
-    }
 
-    rider.availabilityStatus = dto.availabilityStatus;
-    const saved = await this.riderRepository.save(rider);
+      if (rider.status !== RiderStatus.ACTIVE) {
+        throw new DomainException(
+          ErrorCode.RIDER_NOT_AVAILABLE,
+          'Inactive riders cannot change availability.',
+        );
+      }
+
+      if (LOCKED_AVAILABILITY_STATES.has(rider.availabilityStatus)) {
+        throw new DomainException(
+          ErrorCode.TRIP_INVALID_STATE,
+          'Availability cannot be changed while the rider is assigned to a trip.',
+        );
+      }
+
+      if (!MANUAL_AVAILABILITY_TARGETS.has(dto.availabilityStatus)) {
+        throw new DomainException(
+          ErrorCode.VALIDATION_ERROR,
+          'Only OFFLINE, AVAILABLE and BUSY availability statuses can be set manually.',
+        );
+      }
+
+      if (dto.availabilityStatus === RiderAvailabilityStatus.AVAILABLE) {
+        const activeAssignment = await manager.getRepository(RiderMotorcycleAssignment).findOne({
+          where: {
+            companyId,
+            riderId: rider.id,
+            active: true,
+          },
+        });
+
+        if (!activeAssignment) {
+          throw new DomainException(
+            ErrorCode.MOTORCYCLE_NOT_AVAILABLE,
+            'Rider must have an active motorcycle assignment (phone tracking unit) before going available.',
+          );
+        }
+      }
+
+      rider.availabilityStatus = dto.availabilityStatus;
+      return riderRepo.save(rider);
+    });
 
     if (actorRole !== UserRole.RIDER) {
       if (dto.availabilityStatus === RiderAvailabilityStatus.AVAILABLE) {
-        await this.notifyRider(companyId, rider.userId, {
+        await this.notifyRider(companyId, saved.userId, {
           subject: 'You were set available on FleetOps',
           headline: 'An admin marked you available for trips.',
           bodyLines: [
@@ -832,7 +841,7 @@ export class RidersService {
           ],
         });
       } else if (dto.availabilityStatus === RiderAvailabilityStatus.OFFLINE) {
-        await this.notifyRider(companyId, rider.userId, {
+        await this.notifyRider(companyId, saved.userId, {
           subject: 'You were set offline on FleetOps',
           headline: 'An admin marked you offline.',
           bodyLines: [

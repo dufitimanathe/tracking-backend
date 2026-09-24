@@ -14,6 +14,18 @@ Multi-tenant NestJS backend for corporate motorcycle transport, fleet GPS, dispa
 
 ## Quick start
 
+### Rider availability after a trip
+
+Trip completion moves the rider to `AWAITING_AVAILABILITY`, which is excluded from dispatch. The rider confirms `AVAILABLE` (Ready for another ride) or `BUSY` (another passenger) from the completion screen or Home. `BUSY` also excludes the rider from dispatch until they explicitly choose Ready. GPS tracking remains separate; `OFFLINE` ends their workday.
+
+Apply `1800000000000-RiderAvailabilityConfirmation` before deploying this backend and the updated rider apps. The enum migration must run outside the all-migrations transaction:
+
+```bash
+npm run migration:run -- --transaction each
+```
+
+Availability updates lock the rider row used by dispatch, so a delayed Ready/Busy tap cannot overwrite an accepted or newly reserved assignment. Existing active-trip, tenant, rider ownership, and motorcycle-assignment checks still apply.
+
 ### 1. Prerequisites
 
 - Node.js 22+

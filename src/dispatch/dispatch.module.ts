@@ -10,6 +10,7 @@ import { TripEventsModule } from '../trip-events/trip-events.module';
 import { Trip } from '../trips/entities/trip.entity';
 import { User } from '../users/entities/user.entity';
 import { WhatsappModule } from '../whatsapp/whatsapp.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { DISPATCH_QUEUE } from './dispatch.constants';
 import { DispatchProcessor } from './dispatch.processor';
 import { DispatchService } from './dispatch.service';
@@ -31,6 +32,7 @@ import { RiderMatchingService } from './rider-matching.service';
     RedisModule,
     MapsModule,
     forwardRef(() => WhatsappModule),
+    NotificationsModule,
   ],
   providers: [DispatchService, RiderMatchingService, DispatchProcessor],
   exports: [DispatchService, RiderMatchingService],

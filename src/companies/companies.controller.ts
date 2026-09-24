@@ -87,7 +87,7 @@ export class CompaniesController {
 
   @Get(':companyId/dashboard')
   @UseGuards(CompanyAccessGuard, RolesGuard)
-  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR, UserRole.PLATFORM_ADMIN)
+  @Roles(UserRole.COMPANY_ADMIN, UserRole.SUPERVISOR, UserRole.ACCOUNTANT, UserRole.PLATFORM_ADMIN)
   @ApiSuccessResponse(CompanyDashboardDto)
   async getDashboard(@Param('companyId', ParseUUIDPipe) companyId: string) {
     const dashboard = await this.companiesService.getDashboard(companyId);

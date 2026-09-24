@@ -41,6 +41,21 @@ export class CompanyResponseDto {
   @ApiProperty({ enum: CompanyStatus })
   status!: CompanyStatus;
 
+  @ApiPropertyOptional()
+  approvedAt?: Date | null;
+
+  @ApiPropertyOptional()
+  approvedByUserId?: string | null;
+
+  @ApiPropertyOptional()
+  rejectedAt?: Date | null;
+
+  @ApiPropertyOptional()
+  rejectionReason?: string | null;
+
+  @ApiPropertyOptional()
+  reviewNotes?: string | null;
+
   @ApiProperty({ enum: BillingPeriod })
   billingPeriod!: BillingPeriod;
 
@@ -75,6 +90,11 @@ export class CompanyResponseDto {
       timezone: company.timezone,
       currency: company.currency,
       status: company.status,
+      approvedAt: company.approvedAt ?? null,
+      approvedByUserId: company.approvedByUserId ?? null,
+      rejectedAt: company.rejectedAt ?? null,
+      rejectionReason: company.rejectionReason ?? null,
+      reviewNotes: company.reviewNotes ?? null,
       billingPeriod: company.billingPeriod,
       billingDistanceSource: company.billingDistanceSource,
       trackingShareIntervalMinutes: company.trackingShareIntervalMinutes ?? 10,

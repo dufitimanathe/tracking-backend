@@ -9,6 +9,9 @@ import { normalizeRwandaPhone } from '../common/utils/rwanda-phone.util';
 import {
   BillingDistanceSource,
   BillingPeriod,
+  CompanyDocumentStatus,
+  CompanyDocumentType,
+  CompanyStatus,
   IncidentStatus,
   MembershipStatus,
   MotorcycleStatus,
@@ -26,6 +29,7 @@ import { Rider } from '../riders/entities/rider.entity';
 import { TransportRequest } from '../transport-requests/entities/transport-request.entity';
 import { Trip } from '../trips/entities/trip.entity';
 import { User } from '../users/entities/user.entity';
+import { CompanyDocument } from './entities/company-document.entity';
 import { CompanyOnboarding } from './entities/company-onboarding.entity';
 import { Company } from './entities/company.entity';
 import { CreateCompanyDto } from './dto/create-company.dto';
@@ -41,6 +45,13 @@ import { UpdateOnboardingDto } from './dto/update-onboarding.dto';
 export interface CompanyCreationResult {
   company: CompanyResponseDto;
   onboarding: CompanyOnboardingResponseDto;
+}
+
+export interface RegisterDocumentInput {
+  type: CompanyDocumentType;
+  title: string;
+  fileUrl: string;
+  notes?: string;
 }
 
 const ACTIVE_TRIP_STATUSES: TripStatus[] = [
@@ -68,6 +79,8 @@ export class CompaniesService {
     private readonly onboardingRepository: Repository<CompanyOnboarding>,
     @InjectRepository(CompanyMember)
     private readonly companyMemberRepository: Repository<CompanyMember>,
+    @InjectRepository(CompanyDocument)
+    private readonly companyDocumentRepository: Repository<CompanyDocument>,
     @InjectRepository(PricingRule)
     private readonly pricingRuleRepository: Repository<PricingRule>,
     @InjectRepository(Trip)
@@ -86,7 +99,7 @@ export class CompaniesService {
   ) {}
 
   async createForUser(userId: string, dto: CreateCompanyDto): Promise<CompanyCreationResult> {
-    return this.createCompanyBundle(userId, dto);
+    return this.createCompanyBundle(userId, dto, CompanyStatus.PENDING_REVIEW);
   }
 
   async createWithNewAdmin(
@@ -94,6 +107,10 @@ export class CompaniesService {
     dto: CreateCompanyDto,
     passwordHash: string,
     userId?: string,
+    options?: {
+      status?: CompanyStatus;
+      documents?: RegisterDocumentInput[];
+    },
   ): Promise<{ userId: string; company: CompanyCreationResult }> {
     return this.dataSource.transaction(async (manager) => {
       let resolvedUserId = userId;
@@ -112,6 +129,7 @@ export class CompaniesService {
       }
 
       const slug = await this.generateUniqueSlug(dto.name, manager.getRepository(Company));
+      const status = options?.status ?? CompanyStatus.PENDING_REVIEW;
       const company = manager.getRepository(Company).create({
         name: dto.name.trim(),
         slug,
@@ -124,6 +142,8 @@ export class CompaniesService {
         billingPeriod: dto.billingPeriod ?? BillingPeriod.MONTHLY,
         billingDistanceSource:
           dto.billingDistanceSource ?? BillingDistanceSource.ROUTE_ESTIMATE,
+        status,
+        approvedAt: status === CompanyStatus.ACTIVE ? new Date() : null,
       });
       const savedCompany = await manager.getRepository(Company).save(company);
 
@@ -151,6 +171,21 @@ export class CompaniesService {
         active: true,
       });
       await manager.getRepository(PricingRule).save(pricingRule);
+
+      if (options?.documents?.length) {
+        const docs = options.documents.map((doc) =>
+          manager.getRepository(CompanyDocument).create({
+            companyId: savedCompany.id,
+            type: doc.type,
+            title: doc.title.trim(),
+            fileUrl: doc.fileUrl.trim(),
+            notes: doc.notes?.trim() ?? null,
+            status: CompanyDocumentStatus.SUBMITTED,
+            uploadedByUserId: resolvedUserId,
+          }),
+        );
+        await manager.getRepository(CompanyDocument).save(docs);
+      }
 
       return {
         userId: resolvedUserId,
@@ -374,6 +409,7 @@ export class CompaniesService {
   private async createCompanyBundle(
     userId: string,
     dto: CreateCompanyDto,
+    status: CompanyStatus = CompanyStatus.PENDING_REVIEW,
   ): Promise<CompanyCreationResult> {
     return this.dataSource.transaction(async (manager) => {
       const slug = await this.generateUniqueSlug(dto.name, manager.getRepository(Company));
@@ -389,6 +425,8 @@ export class CompaniesService {
         billingPeriod: dto.billingPeriod ?? BillingPeriod.MONTHLY,
         billingDistanceSource:
           dto.billingDistanceSource ?? BillingDistanceSource.ROUTE_ESTIMATE,
+        status,
+        approvedAt: status === CompanyStatus.ACTIVE ? new Date() : null,
       });
       const savedCompany = await manager.getRepository(Company).save(company);
 

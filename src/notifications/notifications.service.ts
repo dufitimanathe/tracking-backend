@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { NotificationType } from '../common/enums';
@@ -7,8 +7,11 @@ import { PaginationQueryDto } from '../common/dto/pagination.dto';
 import { NotFoundDomainException } from '../common/exceptions/domain.exception';
 import { REALTIME_EVENTS } from '../realtime/realtime.constants';
 import { RealtimeService } from '../realtime/realtime.service';
+import { Rider } from '../riders/entities/rider.entity';
+import { Trip } from '../trips/entities/trip.entity';
 import { NotificationResponseDto } from './dto/notification-response.dto';
 import { Notification } from './entities/notification.entity';
+import { ExpoPushService } from './expo-push.service';
 
 export interface CreateNotificationInput {
   companyId: string;
@@ -22,10 +25,15 @@ export interface CreateNotificationInput {
 
 @Injectable()
 export class NotificationsService {
+  private readonly logger = new Logger(NotificationsService.name);
+
   constructor(
     @InjectRepository(Notification)
     private readonly notificationRepository: Repository<Notification>,
+    @InjectRepository(Rider)
+    private readonly riderRepository: Repository<Rider>,
     private readonly realtimeService: RealtimeService,
+    private readonly expoPushService: ExpoPushService,
   ) {}
 
   async create(input: CreateNotificationInput): Promise<NotificationResponseDto> {
@@ -45,6 +53,54 @@ export class NotificationsService {
     this.realtimeService.emitToUser(input.userId, REALTIME_EVENTS.NOTIFICATION_CREATED, dto);
 
     return dto;
+  }
+
+  async notifyRiderTripOffer(trip: Trip): Promise<void> {
+    if (!trip.riderId) {
+      return;
+    }
+
+    try {
+      const rider = await this.riderRepository.findOne({ where: { id: trip.riderId } });
+      if (!rider?.userId) {
+        return;
+      }
+
+      const message = `${trip.pickupAddress} → ${trip.destinationAddress}`;
+      await this.create({
+        companyId: trip.companyId,
+        userId: rider.userId,
+        type: NotificationType.TRIP_ASSIGNMENT,
+        title: 'New trip offer',
+        message,
+        relatedEntityType: 'trip',
+        relatedEntityId: trip.id,
+      });
+
+      this.realtimeService.emitToRider(trip.riderId, REALTIME_EVENTS.TRIP_OFFER, {
+        tripId: trip.id,
+        companyId: trip.companyId,
+        pickupAddress: trip.pickupAddress,
+        destinationAddress: trip.destinationAddress,
+        assignedAt: trip.assignedAt?.toISOString() ?? new Date().toISOString(),
+      });
+      this.realtimeService.emitToUser(rider.userId, REALTIME_EVENTS.TRIP_OFFER, {
+        tripId: trip.id,
+        companyId: trip.companyId,
+        pickupAddress: trip.pickupAddress,
+        destinationAddress: trip.destinationAddress,
+        assignedAt: trip.assignedAt?.toISOString() ?? new Date().toISOString(),
+      });
+
+      await this.expoPushService.sendTripOfferAlarm(rider.userId, {
+        tripId: trip.id,
+        companyId: trip.companyId,
+        pickupAddress: trip.pickupAddress,
+        destinationAddress: trip.destinationAddress,
+      });
+    } catch (error) {
+      this.logger.warn(`notifyRiderTripOffer failed for trip ${trip.id}: ${String(error)}`);
+    }
   }
 
   async createForCompanyAdmins(

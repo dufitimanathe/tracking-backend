@@ -14,7 +14,7 @@ import {
   ConflictDomainException,
   DomainException,
 } from '../common/exceptions/domain.exception';
-import { ErrorCode, MembershipStatus, UserStatus } from '../common/enums';
+import { ErrorCode, CompanyStatus, MembershipStatus, UserStatus } from '../common/enums';
 import { normalizeActivationCode } from '../common/utils/activation-code.util';
 import { HttpStatus } from '@nestjs/common';
 import { UserResponseDto } from '../users/dto/user-response.dto';
@@ -115,6 +115,10 @@ export class AuthService {
       dto.admin,
       dto.company,
       passwordHash,
+      undefined,
+      {
+        documents: dto.documents,
+      },
     );
 
     const user = await this.usersService.findByIdOrFail(userId);
@@ -286,6 +290,7 @@ export class AuthService {
         companyId: membership.companyId,
         companyName: company?.name ?? 'Unknown',
         companySlug: company?.slug ?? '',
+        companyStatus: company?.status ?? CompanyStatus.INACTIVE,
         role: membership.role,
         status: membership.status,
         joinedAt: membership.joinedAt,

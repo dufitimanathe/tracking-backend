@@ -1,8 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsArray,
   IsEmail,
+  IsEnum,
   IsOptional,
   IsString,
+  IsUrl,
   Matches,
   MaxLength,
   MinLength,
@@ -11,6 +14,7 @@ import {
 import { Type } from 'class-transformer';
 import { CreateCompanyDto } from './create-company.dto';
 import { IsRwandaPhone } from '../../common/validators/is-rwanda-phone.decorator';
+import { CompanyDocumentType } from '../../common/enums';
 
 export class RegisterCompanyAdminDto {
   @ApiProperty({ example: 'Jane' })
@@ -46,6 +50,29 @@ export class RegisterCompanyAdminDto {
   password!: string;
 }
 
+export class RegisterCompanyDocumentDto {
+  @ApiProperty({ enum: CompanyDocumentType })
+  @IsEnum(CompanyDocumentType)
+  type!: CompanyDocumentType;
+
+  @ApiProperty({ example: 'Business registration certificate' })
+  @IsString()
+  @MaxLength(255)
+  title!: string;
+
+  @ApiProperty({ example: 'https://drive.google.com/file/d/...' })
+  @IsString()
+  @IsUrl({ require_tld: false })
+  @MaxLength(1000)
+  fileUrl!: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  notes?: string;
+}
+
 export class RegisterCompanyDto {
   @ApiProperty({ type: CreateCompanyDto })
   @ValidateNested()
@@ -56,4 +83,11 @@ export class RegisterCompanyDto {
   @ValidateNested()
   @Type(() => RegisterCompanyAdminDto)
   admin!: RegisterCompanyAdminDto;
+
+  @ApiPropertyOptional({ type: [RegisterCompanyDocumentDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => RegisterCompanyDocumentDto)
+  documents?: RegisterCompanyDocumentDto[];
 }

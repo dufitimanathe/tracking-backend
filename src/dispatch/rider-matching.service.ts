@@ -22,6 +22,10 @@ export interface RankedMatchResult {
   method: AssignmentMethod;
 }
 
+export interface ManualMatchCandidate extends Omit<RiderMatchCandidate, 'distanceMeters'> {
+  distanceMeters?: number;
+}
+
 @Injectable()
 export class RiderMatchingService {
   private readonly logger = new Logger(RiderMatchingService.name);
@@ -32,6 +36,65 @@ export class RiderMatchingService {
     private readonly mapsService: MapsService,
     private readonly configService: ConfigService,
   ) {}
+
+  async findManualCandidates(
+    companyId: string,
+    pickupLat: number,
+    pickupLng: number,
+  ): Promise<ManualMatchCandidate[]> {
+    const rows = await this.riderRepository.query(
+      `SELECT r.id as "riderId", a."motorcycleId", loc.lat, loc.lng,
+        EXTRACT(EPOCH FROM (NOW() - loc.at)) as age_seconds
+      FROM riders r
+      JOIN rider_motorcycle_assignments a
+        ON a."riderId" = r.id AND a."companyId" = r."companyId" AND a.active = true
+      JOIN motorcycles m ON m.id = a."motorcycleId" AND m."companyId" = r."companyId"
+      LEFT JOIN motorcycle_current_locations cl
+        ON cl."motorcycleId" = m.id AND cl."companyId" = r."companyId"
+      LEFT JOIN LATERAL (
+        SELECT p.lat, p.lng, p.at FROM (VALUES
+          (cl.latitude, cl.longitude, cl."recordedAt"),
+          (r."currentLatitude"::float, r."currentLongitude"::float, r."locationUpdatedAt")
+        ) p(lat, lng, at)
+        WHERE p.lat BETWEEN -90 AND 90 AND p.lng BETWEEN -180 AND 180
+        ORDER BY p.at DESC NULLS LAST LIMIT 1
+      ) loc ON true
+      WHERE r."companyId" = $1 AND r.status = 'ACTIVE'
+        AND r."availabilityStatus" = 'AVAILABLE' AND m.status = 'ACTIVE'
+        AND NOT EXISTS (
+          SELECT 1 FROM trips t WHERE t."companyId" = r."companyId"
+            AND (t."riderId" = r.id OR t."motorcycleId" = m.id)
+            AND t.status IN ('RIDER_ASSIGNED', 'RIDER_ACCEPTED', 'RIDER_TO_PICKUP', 'RIDER_ARRIVED', 'IN_PROGRESS')
+        )`,
+      [companyId],
+    );
+    return rows
+      .map(
+        (row: {
+          riderId: string;
+          motorcycleId: string;
+          lat: number | null;
+          lng: number | null;
+          age_seconds: string | null;
+        }): ManualMatchCandidate => ({
+          riderId: row.riderId,
+          motorcycleId: row.motorcycleId,
+          latitude: row.lat ?? undefined,
+          longitude: row.lng ?? undefined,
+          locationAgeSeconds:
+            row.age_seconds == null ? undefined : Math.max(0, Number(row.age_seconds)),
+          distanceMeters:
+            row.lat == null || row.lng == null
+              ? undefined
+              : haversineDistanceMeters(pickupLat, pickupLng, Number(row.lat), Number(row.lng)),
+        }),
+      )
+      .sort(
+        (a: ManualMatchCandidate, b: ManualMatchCandidate) =>
+          (a.distanceMeters ?? Infinity) - (b.distanceMeters ?? Infinity) ||
+          a.riderId.localeCompare(b.riderId),
+      );
+  }
 
   async findNearbyAvailableRiders(
     companyId: string,
@@ -109,8 +172,7 @@ export class RiderMatchingService {
       const ranked = shortlist
         .map((candidate, index) => {
           const durationSeconds = matrix.durationsSeconds[index]?.[0] ?? Number.MAX_SAFE_INTEGER;
-          const distanceMeters =
-            matrix.distancesMeters[index]?.[0] || candidate.distanceMeters;
+          const distanceMeters = matrix.distancesMeters[index]?.[0] || candidate.distanceMeters;
           return {
             ...candidate,
             durationSeconds:
@@ -149,15 +211,16 @@ export class RiderMatchingService {
         ST_Distance(cl.position::geography, ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography) as distance_meters,
         ST_Y(cl.position::geometry) as lat,
         ST_X(cl.position::geometry) as lng,
-        EXTRACT(EPOCH FROM (NOW() - COALESCE(cl."updatedAt", cl."createdAt"))) as age_seconds
+        EXTRACT(EPOCH FROM (NOW() - cl."recordedAt")) as age_seconds
       FROM riders r
-      JOIN rider_motorcycle_assignments a ON a."riderId" = r.id AND a.active = true
-      JOIN motorcycle_current_locations cl ON cl."motorcycleId" = a."motorcycleId"
+      JOIN rider_motorcycle_assignments a ON a."riderId" = r.id AND a."companyId" = r."companyId" AND a.active = true
+      JOIN motorcycles m ON m.id = a."motorcycleId" AND m."companyId" = r."companyId" AND m.status = 'ACTIVE'
+      JOIN motorcycle_current_locations cl ON cl."motorcycleId" = a."motorcycleId" AND cl."companyId" = r."companyId"
       WHERE r."companyId" = $1
         AND r.status = 'ACTIVE'
         AND r."availabilityStatus" = 'AVAILABLE'
         AND ST_DWithin(cl.position::geography, ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography, $4)
-        AND COALESCE(cl."updatedAt", cl."createdAt") >= NOW() - ($5 || ' seconds')::interval
+        AND cl."recordedAt" >= NOW() - ($5 || ' seconds')::interval
       ORDER BY distance_meters ASC
       LIMIT $6
       `,
@@ -196,15 +259,16 @@ export class RiderMatchingService {
       SELECT r.id as "riderId", a."motorcycleId",
         r."currentLatitude"::float as lat,
         r."currentLongitude"::float as lng,
-        EXTRACT(EPOCH FROM (NOW() - COALESCE(r."locationUpdatedAt", r."updatedAt"))) as age_seconds
+        EXTRACT(EPOCH FROM (NOW() - r."locationUpdatedAt")) as age_seconds
       FROM riders r
-      JOIN rider_motorcycle_assignments a ON a."riderId" = r.id AND a.active = true
+      JOIN rider_motorcycle_assignments a ON a."riderId" = r.id AND a."companyId" = r."companyId" AND a.active = true
+      JOIN motorcycles m ON m.id = a."motorcycleId" AND m."companyId" = r."companyId" AND m.status = 'ACTIVE'
       WHERE r."companyId" = $1
         AND r.status = 'ACTIVE'
         AND r."availabilityStatus" = 'AVAILABLE'
         AND r."currentLatitude" IS NOT NULL
         AND r."currentLongitude" IS NOT NULL
-        AND COALESCE(r."locationUpdatedAt", r."updatedAt") >= NOW() - ($2 || ' seconds')::interval
+        AND r."locationUpdatedAt" >= NOW() - ($2 || ' seconds')::interval
       `,
       [companyId, maxAgeSeconds],
     );

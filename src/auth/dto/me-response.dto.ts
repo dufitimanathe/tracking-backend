@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { MembershipStatus, UserRole } from '../../common/enums';
+import { CompanyStatus, MembershipStatus, UserRole } from '../../common/enums';
 import { UserResponseDto } from '../../users/dto/user-response.dto';
 
 export class MembershipSummaryDto {
@@ -14,6 +14,9 @@ export class MembershipSummaryDto {
 
   @ApiProperty()
   companySlug!: string;
+
+  @ApiProperty({ enum: CompanyStatus })
+  companyStatus!: CompanyStatus;
 
   @ApiProperty({ enum: UserRole })
   role!: UserRole;

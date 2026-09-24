@@ -39,12 +39,12 @@ describe('trip-state-machine', () => {
     });
 
     it('throws TripInvalidStateException for invalid transitions', () => {
-      expect(() =>
-        assertTransition(TripStatus.COMPLETED, TripStatus.IN_PROGRESS),
-      ).toThrow(TripInvalidStateException);
-      expect(() =>
-        assertTransition(TripStatus.SEARCHING_RIDER, TripStatus.IN_PROGRESS),
-      ).toThrow(TripInvalidStateException);
+      expect(() => assertTransition(TripStatus.COMPLETED, TripStatus.IN_PROGRESS)).toThrow(
+        TripInvalidStateException,
+      );
+      expect(() => assertTransition(TripStatus.SEARCHING_RIDER, TripStatus.IN_PROGRESS)).toThrow(
+        TripInvalidStateException,
+      );
     });
   });
 
@@ -52,12 +52,20 @@ describe('trip-state-machine', () => {
     it('returns true for terminal statuses', () => {
       expect(isTerminalStatus(TripStatus.COMPLETED)).toBe(true);
       expect(isTerminalStatus(TripStatus.CANCELLED)).toBe(true);
-      expect(isTerminalStatus(TripStatus.NO_RIDER_AVAILABLE)).toBe(true);
     });
 
     it('returns false for active statuses', () => {
+      expect(isTerminalStatus(TripStatus.NO_RIDER_AVAILABLE)).toBe(false);
       expect(isTerminalStatus(TripStatus.SEARCHING_RIDER)).toBe(false);
       expect(isTerminalStatus(TripStatus.IN_PROGRESS)).toBe(false);
+    });
+    it('allows retry or manual assignment after an unsuccessful search', () => {
+      expect(() =>
+        assertTransition(TripStatus.NO_RIDER_AVAILABLE, TripStatus.SEARCHING_RIDER),
+      ).not.toThrow();
+      expect(() =>
+        assertTransition(TripStatus.NO_RIDER_AVAILABLE, TripStatus.RIDER_ASSIGNED),
+      ).not.toThrow();
     });
   });
 });

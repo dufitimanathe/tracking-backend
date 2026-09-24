@@ -38,9 +38,24 @@ export class Company extends BaseEntity {
   @Column({
     type: 'enum',
     enum: CompanyStatus,
-    default: CompanyStatus.ACTIVE,
+    default: CompanyStatus.PENDING_REVIEW,
   })
   status!: CompanyStatus;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  approvedAt?: Date | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  approvedByUserId?: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  rejectedAt?: Date | null;
+
+  @Column({ type: 'text', nullable: true })
+  rejectionReason?: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  reviewNotes?: string | null;
 
   @Column({
     type: 'enum',

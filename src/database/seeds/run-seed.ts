@@ -51,14 +51,14 @@ async function ensureAdmin(
     await manager.query(
       `INSERT INTO company_members ("userId", "companyId", role, status, "joinedAt")
        VALUES ($1, $2, $3, $4, now())`,
-      [adminUserId, companyId, UserRole.COMPANY_ADMIN, MembershipStatus.ACTIVE],
+      [adminUserId, companyId, UserRole.PLATFORM_ADMIN, MembershipStatus.ACTIVE],
     );
   } else {
     await manager.query(
       `UPDATE company_members
        SET role = $1, status = $2, "updatedAt" = now()
        WHERE id = $3`,
-      [UserRole.COMPANY_ADMIN, MembershipStatus.ACTIVE, membership[0].id],
+      [UserRole.PLATFORM_ADMIN, MembershipStatus.ACTIVE, membership[0].id],
     );
   }
 
@@ -105,8 +105,8 @@ async function runSeed(): Promise<void> {
         );
       } else {
         const company = await manager.query(
-          `INSERT INTO companies (name, slug, email, phone, address, timezone, currency)
-           VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+          `INSERT INTO companies (name, slug, email, phone, address, timezone, currency, status, "approvedAt")
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 'ACTIVE', now()) RETURNING id`,
           [
             COMPANY_NAME,
             COMPANY_SLUG,
@@ -147,7 +147,7 @@ async function runSeed(): Promise<void> {
       }
     });
 
-    console.log('Seed completed: company + admin only (no fleet/riders/employees).');
+    console.log('Seed completed: Kampere Motari + PLATFORM_ADMIN (Super Admin).');
     console.log(`Admin: ${ADMIN_EMAIL}`);
   } finally {
     await dataSource.destroy();

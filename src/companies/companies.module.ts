@@ -13,6 +13,7 @@ import { CompaniesController } from './companies.controller';
 import { CompaniesService } from './companies.service';
 import { CompanyOnboarding } from './entities/company-onboarding.entity';
 import { Company } from './entities/company.entity';
+import { CompanyDocument } from './entities/company-document.entity';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { Company } from './entities/company.entity';
     TypeOrmModule.forFeature([
       Company,
       CompanyOnboarding,
+      CompanyDocument,
       CompanyMember,
       PricingRule,
       Trip,
@@ -32,6 +34,6 @@ import { Company } from './entities/company.entity';
   ],
   controllers: [CompaniesController],
   providers: [CompaniesService],
-  exports: [CompaniesService],
+  exports: [CompaniesService, TypeOrmModule],
 })
 export class CompaniesModule {}

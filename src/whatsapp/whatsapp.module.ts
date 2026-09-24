@@ -9,6 +9,7 @@ import { MapsModule } from '../maps/maps.module';
 import { TransportRequest } from '../transport-requests/entities/transport-request.entity';
 import { TransportRequestsModule } from '../transport-requests/transport-requests.module';
 import { IntegrationEvent } from '../integrations/entities/integration-event.entity';
+import { Trip } from '../trips/entities/trip.entity';
 import { TransportRequestParsing } from './entities/transport-request-parsing.entity';
 import { WhatsAppConversation } from './entities/whatsapp-conversation.entity';
 import { WhatsAppMessage } from './entities/whatsapp-message.entity';
@@ -29,6 +30,7 @@ import { WhatsAppStatusNotifierService } from './whatsapp-status-notifier.servic
       TransportRequest,
       Employee,
       IntegrationEvent,
+      Trip,
     ]),
     BullModule.registerQueue({ name: QUEUE_WHATSAPP }),
     RedisModule,
