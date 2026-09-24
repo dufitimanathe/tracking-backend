@@ -41,6 +41,7 @@ import { TrackingModule } from './tracking/tracking.module';
 import { IntegrationsModule } from './integrations/integrations.module';
 import { MailModule } from './mail/mail.module';
 import { PlatformModule } from './platform/platform.module';
+import { UploadsModule } from './uploads/uploads.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { PlatformModule } from './platform/platform.module';
     }),
     MailModule,
     PlatformModule,
+    UploadsModule,
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {

@@ -2,12 +2,17 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
+import { join } from 'path';
+import { existsSync, mkdirSync } from 'fs';
 import { AppModule } from './app.module';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 
 async function bootstrap(): Promise<void> {
-  const app = await NestFactory.create(AppModule, { rawBody: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    rawBody: true,
+  });
   const config = app.get(ConfigService);
   const logger = new Logger('Bootstrap');
 
@@ -15,9 +20,31 @@ async function bootstrap(): Promise<void> {
   const port = config.get<number>('app.port', { infer: true }) ?? 3000;
   const corsOrigins = config.get<string[]>('app.corsOrigins', { infer: true }) ?? [];
   const swaggerEnabled = config.get<boolean>('app.swaggerEnabled', { infer: true }) ?? true;
+  const uploadsDir =
+    config.get<string>('app.uploads.dir', { infer: true }) ?? join(process.cwd(), 'uploads');
+
+  if (!existsSync(uploadsDir)) {
+    mkdirSync(uploadsDir, { recursive: true });
+  }
+  if (!existsSync(join(uploadsDir, 'company-docs'))) {
+    mkdirSync(join(uploadsDir, 'company-docs'), { recursive: true });
+  }
+
+  app.useStaticAssets(uploadsDir, {
+    prefix: '/uploads/',
+    setHeaders: (res) => {
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      res.setHeader('Cache-Control', 'private, max-age=3600');
+    },
+  });
 
   app.setGlobalPrefix(apiPrefix, { exclude: ['health', 'health/(.*)'] });
-  app.use(helmet());
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+      contentSecurityPolicy: false,
+    }),
+  );
   app.enableCors({
     origin: corsOrigins.length ? corsOrigins : true,
     credentials: true,
@@ -55,6 +82,7 @@ async function bootstrap(): Promise<void> {
 
   await app.listen(port);
   logger.log(`API listening on :${port}/${apiPrefix}`);
+  logger.log(`Uploads served from ${uploadsDir} at /uploads/`);
   if (swaggerEnabled) {
     logger.log(`Swagger at http://localhost:${port}/api/docs`);
   }

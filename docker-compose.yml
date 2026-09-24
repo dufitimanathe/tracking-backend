@@ -49,8 +49,11 @@ services:
     environment:
       DATABASE_HOST: postgres
       REDIS_HOST: redis
+      UPLOADS_DIR: /app/uploads
     ports:
       - "${PORT:-3000}:3000"
+    volumes:
+      - uploads_data:/app/uploads
     healthcheck:
       test:
         [
@@ -90,3 +93,4 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  uploads_data:

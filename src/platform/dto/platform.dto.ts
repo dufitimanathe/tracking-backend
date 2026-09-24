@@ -4,7 +4,7 @@ import {
   IsEnum,
   IsOptional,
   IsString,
-  IsUrl,
+  Matches,
   MaxLength,
   MinLength,
   ValidateNested,
@@ -79,7 +79,9 @@ export class AddCompanyDocumentDto {
 
   @ApiProperty()
   @IsString()
-  @IsUrl({ require_tld: false })
+  @Matches(/^(https?:\/\/|\/uploads\/).+/i, {
+    message: 'fileUrl must be an http(s) URL or an /uploads/… path',
+  })
   @MaxLength(1000)
   fileUrl!: string;
 

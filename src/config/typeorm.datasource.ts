@@ -22,6 +22,7 @@ export default new DataSource({
   ssl: (process.env.DATABASE_SSL ?? 'false') === 'true' ? { rejectUnauthorized: false } : false,
   entities,
   migrations: [migrationsGlob],
+  migrationsTransactionMode: 'each',
   synchronize: false,
   logging: process.env.NODE_ENV === 'development',
 });

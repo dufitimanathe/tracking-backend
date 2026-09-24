@@ -5,7 +5,6 @@ import {
   IsEnum,
   IsOptional,
   IsString,
-  IsUrl,
   Matches,
   MaxLength,
   MinLength,
@@ -60,9 +59,14 @@ export class RegisterCompanyDocumentDto {
   @MaxLength(255)
   title!: string;
 
-  @ApiProperty({ example: 'https://drive.google.com/file/d/...' })
+  @ApiProperty({
+    example: '/uploads/company-docs/….pdf',
+    description: 'Absolute http(s) URL or /uploads/… path from the upload API',
+  })
   @IsString()
-  @IsUrl({ require_tld: false })
+  @Matches(/^(https?:\/\/|\/uploads\/).+/i, {
+    message: 'fileUrl must be an http(s) URL or an /uploads/… path',
+  })
   @MaxLength(1000)
   fileUrl!: string;
 

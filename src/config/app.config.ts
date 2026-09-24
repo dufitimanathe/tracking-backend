@@ -1,4 +1,5 @@
 import { registerAs } from '@nestjs/config';
+import { join } from 'path';
 
 export default registerAs('app', () => ({
   nodeEnv: process.env.NODE_ENV ?? 'development',
@@ -25,6 +26,18 @@ export default registerAs('app', () => ({
   },
   /** Public web app URL (employee / supervisor / accountant activation). */
   publicWebUrl: (process.env.APP_PUBLIC_WEB_URL ?? 'http://localhost:3001').replace(/\/$/, ''),
+  /**
+   * Absolute public API origin (no /api/v1), used for uploaded document URLs.
+   * Example: http://localhost:3000
+   */
+  publicApiOrigin: (
+    process.env.APP_PUBLIC_API_ORIGIN ??
+    process.env.APP_PUBLIC_API_URL ??
+    'http://localhost:3000'
+  ).replace(/\/$/, ''),
+  uploads: {
+    dir: process.env.UPLOADS_DIR?.trim() || join(process.cwd(), 'uploads'),
+  },
   /**
    * Deep link that opens the FleetOps mobile app for rider activation.
    * Example: fleetops://activate
