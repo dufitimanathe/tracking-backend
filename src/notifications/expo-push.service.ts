@@ -26,11 +26,13 @@ export class ExpoPushService {
       to: row.token,
       title: 'New trip offer',
       body: `${offer.pickupAddress} → ${offer.destinationAddress}`,
-      sound: 'trip_offer_alarm',
+      // Android uses the notification channel sound; iOS uses this filename (no path).
+      sound: 'trip_offer_alarm.wav',
       priority: 'high' as const,
-      channelId: 'trip_offers',
+      channelId: 'trip_offers_v2',
       categoryId: 'TRIP_OFFER',
       ttl: 120,
+      _contentAvailable: true,
       data: {
         type: 'TRIP_OFFER',
         tripId: offer.tripId,
